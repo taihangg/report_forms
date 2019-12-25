@@ -8,7 +8,7 @@ import 'plugins/common_localizations_delegate.dart';
 import 'report_form_page.dart';
 import 'add_detail_data_page.dart';
 import 'add_expenditure_data_page.dart';
-import 'add_data_page.dart';
+import 'normal_data_page.dart';
 import 'other_page.dart';
 
 void testFn() {
@@ -116,12 +116,12 @@ class _HomePageState extends State<_HomePage> {
 
   _addDataPage() {
     _tabList.add(Tab(
-      text: "添加数据",
+      text: "日常数据处理",
 //      icon: Icon(Icons.assignment),
     ));
 
 //    _tabBarViewChildren.add(AddDetailDataPage());
-    _tabBarViewChildren.add(AddDataPage());
+    _tabBarViewChildren.add(NormalDataPage());
   }
 
   _addImportPage() {

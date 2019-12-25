@@ -12,11 +12,13 @@ import 'package:esys_flutter_share/esys_flutter_share.dart'
     as esys_flutter_share;
 import 'package:share_extend/share_extend.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:spreadsheet_decoder/spreadsheet_decoder.dart';
 import 'common_util.dart';
 
 import 'excel_mgr.dart';
 import 'add_detail_data_page.dart';
 import 'add_expenditure_data_page.dart';
+import 'excel_preview_select_page.dart';
 
 class OtherPage extends StatefulWidget {
   @override
@@ -26,8 +28,14 @@ class OtherPage extends StatefulWidget {
 }
 
 class _OtherPageState extends State<OtherPage> {
+  _OtherPageState() {
+    _fontSize = _width / 15;
+    _textStyle = TextStyle(fontSize: _fontSize, color: Colors.black87);
+  }
   double _width = MediaQueryData.fromWindow(window).size.width;
   double _height = MediaQueryData.fromWindow(window).size.height;
+  double _fontSize;
+  TextStyle _textStyle;
 
   ExcelMgr _excelMgr = ExcelMgr();
 
@@ -36,37 +44,83 @@ class _OtherPageState extends State<OtherPage> {
     return Scaffold(
 //      appBar: AppBar(title: Center(child: Text("分享"))),
       body: Builder(builder: (BuildContext context) {
-        return _buildBody();
+        return Scrollbar(child: SingleChildScrollView(child: _buildBody()));
       }),
     );
   }
 
   Widget _buildBody() {
+    final sizedBox = SizedBox(height: _width * 5 / 100);
     return Column(
 //      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: <Widget>[
-        SizedBox(height: _width * 10 / 100),
+        sizedBox,
         Divider(),
+        sizedBox,
         _buildImportDetailDataButton(),
+        sizedBox,
         Divider(),
+        sizedBox,
         _buildImportExpenditureDataButton(),
-        Divider(),
-        _buildImportDataFileButton(),
-        Divider(),
+        sizedBox,
+        Divider(color: Colors.orange),
+        sizedBox,
+//        _buildImportDataFileButton(),
+//        sizedBox,
+//        Divider(),
+//        sizedBox,
         _buildShareDataFileButton(),
+        sizedBox,
+        Divider(),
       ],
     );
   }
 
   Widget _buildImportDetailDataButton() {
+    final title = RichText(
+        textAlign: TextAlign.center,
+        text: TextSpan(children: [
+          TextSpan(text: "从xlsx文件", style: _textStyle),
+          TextSpan(
+              text: "导入随喜数据表",
+              style: TextStyle(
+                  fontSize: _fontSize * 1.5, color: Colors.blueAccent)),
+        ]));
     return RaisedButton(
-      child: FittedBox(child: Text("从xlsx文件导入随喜数据")),
-      onPressed: () {
-        assert(false);
-        Navigator.of(context).push(MaterialPageRoute(builder: (context) {
-          return Scaffold(
-            appBar: AppBar(title: Text("从xlsx文件导入随喜数据")),
-            body: AddExpenditureDataPage(),
+      child: FittedBox(child: title),
+      onPressed: () async {
+        final File file = await FilePicker.getFile(
+            type: FileType.CUSTOM, fileExtension: "xlsx");
+        if (null == file) {
+          // 未选择文件
+          return;
+        }
+        List<int> bytes = file.readAsBytesSync();
+
+        SpreadsheetDecoder decoder;
+        try {
+          decoder = SpreadsheetDecoder.decodeBytes(bytes, update: true);
+        } catch (err) {
+          showMsg(context, "请选择合法的xlsx文件");
+          return;
+        }
+
+        Navigator.of(context).push(MaterialPageRoute(builder: (context2) {
+          return ExcelPreviewSelectPage(
+            title,
+            decoder,
+            onCommitFn: (String selectedTableName) async {
+              bool ok =
+                  await _excelMgr.ImportDetailData(decoder, selectedTableName);
+
+              String msg;
+              if (ok) {
+                msg = "导入成功！";
+              } else {
+                msg = "导入失败！";
+              }
+              showMsg(context, msg);
+            },
           );
         }));
       },
@@ -74,14 +128,50 @@ class _OtherPageState extends State<OtherPage> {
   }
 
   Widget _buildImportExpenditureDataButton() {
+    final title = RichText(
+        textAlign: TextAlign.center,
+        text: TextSpan(children: [
+          TextSpan(text: "从xlsx文件", style: _textStyle),
+          TextSpan(
+              text: "导入支出数据表",
+              style:
+                  TextStyle(fontSize: _fontSize * 1.5, color: Colors.orange)),
+        ]));
     return RaisedButton(
-      child: FittedBox(child: Text("从xlsx文件导入支出数据")),
-      onPressed: () {
-        assert(false);
-        Navigator.of(context).push(MaterialPageRoute(builder: (context) {
-          return Scaffold(
-            appBar: AppBar(title: Text("从xlsx文件导入支出数据")),
-            body: AddExpenditureDataPage(),
+      child: FittedBox(child: title),
+      onPressed: () async {
+        final File file = await FilePicker.getFile(
+            type: FileType.CUSTOM, fileExtension: "xlsx");
+        if (null == file) {
+          // 未选择文件
+          return;
+        }
+        List<int> bytes = file.readAsBytesSync();
+
+        SpreadsheetDecoder decoder;
+        try {
+          decoder = SpreadsheetDecoder.decodeBytes(bytes, update: true);
+        } catch (err) {
+          showMsg(context, "请选择合法的xlsx文件");
+          return;
+        }
+
+        Navigator.of(context).push(MaterialPageRoute(builder: (context2) {
+          return ExcelPreviewSelectPage(
+            title,
+            decoder,
+            onCommitFn: (String selectedTableName) async {
+              bool ok = await _excelMgr.ImportExpenditureData(
+                  decoder, selectedTableName);
+
+              String msg;
+              if (ok) {
+                msg = "导入成功！";
+              } else {
+                msg = "导入失败！";
+              }
+              showMsg(context, msg);
+            },
           );
         }));
       },
@@ -90,7 +180,7 @@ class _OtherPageState extends State<OtherPage> {
 
   Widget _buildImportDataFileButton() {
     return RaisedButton(
-      child: FittedBox(child: Text("导入xlsx数据文件")),
+      child: FittedBox(child: Text("导入xlsx数据文件", style: _textStyle)),
       onPressed: () async {
         final File file = await FilePicker.getFile(
             type: FileType.CUSTOM, fileExtension: "xlsx");
@@ -103,7 +193,7 @@ class _OtherPageState extends State<OtherPage> {
 
   Widget _buildShareDataFileButton() {
     return RaisedButton(
-      child: FittedBox(child: Text("分享数据文件")),
+      child: FittedBox(child: Text("分享数据文件", style: _textStyle)),
       onPressed: () async {
         String fullPath = _excelMgr.dataFileFullPath;
 

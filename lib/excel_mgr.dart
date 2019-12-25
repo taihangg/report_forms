@@ -21,7 +21,6 @@ import 'package:esys_flutter_share/esys_flutter_share.dart'
 import 'common_util.dart';
 
 class ExcelMgr {
-  static KeyValueFile _KVFile = KeyValueFile();
   final String _dirKey = "directoryKey";
   final String _fileName = "供灯统计数据表.xlsx";
 
@@ -67,12 +66,10 @@ class ExcelMgr {
   final String _nameListTableName = "打印名单";
   final List<String> _nameListTableTitles = ["日期", "名单"];
 
-  // Map<date,data>
-  static Map<int, List<StatisticsDailyDataItem>> _statisticsDailyDataMap = {};
-  static List<StatisticsDailyDataItem> _statisticsDailyDataList = [];
-  List<StatisticsDailyDataItem> get statisticsDailyDataList =>
-      _statisticsDailyDataList;
-  static int _lastDate = 0;
+// Map<date,List<data>>
+  static Map<int, List<DailyDataItem>> _statisticsDailyDataMap = {};
+  static List<DailyDataItem> _statisticsDailyDataList = [];
+  List<DailyDataItem> get statisticsDailyDataList => _statisticsDailyDataList;
 
   static Map<int, double> _dailyExpenditureDataMap = {}; // Map<date,money>
   static List<ExpenditureDataItem> _expenditureDataItemList = [];
@@ -87,16 +84,17 @@ class ExcelMgr {
     }
   }
 
-  final void Function(bool ok, String msg) onFinishedFn;
+  final int latestDetailDataDayCount; // 首次读取的detail数据的天数
+  final void Function(ExcelMgr mgr, bool ok, String msg) onFinishedFn;
 
-  ExcelMgr({this.onFinishedFn}) {
+  ExcelMgr({this.latestDetailDataDayCount = 15, this.onFinishedFn}) {
     _init();
   }
 
   void _init() async {
     if (ready) {
       if (null != onFinishedFn) {
-        onFinishedFn(true, null);
+        onFinishedFn(this, true, null);
       }
       return;
     }
@@ -106,12 +104,7 @@ class ExcelMgr {
     _status = "initing";
 
     if (null == _dir) {
-      String path = await _KVFile.getString(key: _dirKey);
-      if (null != path) {
-        _dir = Directory(path);
-      } else {
-        _dir = await _defaultExportDirectory();
-      }
+      _dir = await _defaultExportDirectory();
     }
 
     if (null == _file) {
@@ -124,7 +117,7 @@ class ExcelMgr {
         if (null == _decoder) {
           final msg = "初始化文件目录失败，请修改app读写存储的权限";
           if (null != onFinishedFn) {
-            onFinishedFn(false, msg);
+            onFinishedFn(this, false, msg);
           }
           return;
         }
@@ -135,13 +128,24 @@ class ExcelMgr {
         } catch (err) {
           final msg = "请使用合法的xlsx文件";
           if (null != onFinishedFn) {
-            onFinishedFn(false, msg);
+            onFinishedFn(this, false, msg);
           }
           return;
         }
-        await _readExpenditureTable();
-        await _readStatisticsTable();
-        await _readDetailTable();
+        _expenditureDataItemList =
+            _readExpenditureTable(_decoder.tables[_expenditureListTableName]);
+        _dailyExpenditureDataMap =
+            _transformExpenditureDataToDailyMap(_expenditureDataItemList);
+
+        _statisticsDailyDataList =
+            _readStatisticsTable(_decoder.tables[_statisticsTableName]);
+        _statisticsDailyDataMap =
+            _transformStatisticsDataToMap(_statisticsDailyDataList);
+
+        _detailList = _readDetailTable(
+          _decoder.tables[_detailTableName],
+          daysCount: latestDetailDataDayCount,
+        );
 
         await _checkOut();
       }
@@ -149,7 +153,7 @@ class ExcelMgr {
     }
 
     if (null != onFinishedFn) {
-      onFinishedFn(ready, null);
+      onFinishedFn(this, ready, null);
     }
 
     return null;
@@ -165,7 +169,7 @@ class ExcelMgr {
 
     if (defaultTargetPlatform == TargetPlatform.android) {
 //      dir = await getExternalStorageDirectory();
-      dir = Directory("/storage/emulated/0/供灯报表数据");
+      dir = Directory(defaultDataFileDir);
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       dir = await getApplicationDocumentsDirectory();
     }
@@ -210,91 +214,143 @@ class ExcelMgr {
     }
   }
 
-  _readExpenditureTable() async {
-    final expenditureTable = _decoder.tables[_expenditureListTableName];
-    for (int r = 1; r < expenditureTable.maxRows; r++) {
-      final item = await ExpenditureDataItem();
+  List<ExpenditureDataItem> _readExpenditureTable(
+    SpreadsheetTable table, [
+    int startRow,
+    int countLimit,
+  ]) {
+    List<ExpenditureDataItem> dataList = [];
 
-      item.ID = _parseInt(expenditureTable.rows[r][0]);
+    int count = 0;
+    for (int r = startRow ?? 1; r < table.maxRows; r++) {
+      final item = ExpenditureDataItem();
+
+      item.ID = parseInt(table.rows[r][0]);
       if (null == item.ID) {
-        final msg = "解析 ${_expenditureListTableName}[$r][0] 失败.";
+        final msg = "解析 ${table.name}[$r][0] 失败.";
         print(msg);
-        item.ID = _expenditureDataItemList.length;
+        item.ID = dataList.length;
       }
 
-      item.dateInt = parseExcelDate(expenditureTable.rows[r][1]);
+      item.dateInt = parseExcelDate(table.rows[r][1]);
       if (null == item.dateInt) {
-        final msg = "解析 ${_expenditureListTableName}[$r][1] 失败.";
+        final msg = "解析 ${table.name}[$r][1] 失败.";
         print(msg);
         continue;
       }
 
-      item.name = expenditureTable.rows[r][2];
-      item.comment = expenditureTable.rows[r][3];
+      item.name = table.rows[r][2];
+      item.comment = table.rows[r][3];
 
-      item.price = _parseDouble(expenditureTable.rows[r][4]);
+      item.price = parseDouble(table.rows[r][4]);
       if (null == item.price) {
-        final msg = "解析 ${_expenditureListTableName}[$r][4] 失败.";
+        final msg = "解析 ${table.name}[$r][4] 失败.";
         print(msg);
         continue;
       }
 
-      item.count = _parseInt(expenditureTable.rows[r][5]);
+      item.count = parseInt(table.rows[r][5]);
       if (null == item.count) {
-        final msg = "解析 ${_expenditureListTableName}[$r][5] 失败.";
+        final msg = "解析 ${table.name}[$r][5] 失败.";
         print(msg);
         continue;
       }
 
-      item.totalPrice = _parseDouble(expenditureTable.rows[r][6]);
+      item.totalPrice = parseDouble(table.rows[r][6]);
       if (null == item.totalPrice) {
-        final msg = "解析 ${_expenditureListTableName}[$r][6] 失败.";
+        final msg = "解析 ${table.name}[$r][6] 失败.";
         print(msg);
         continue;
       }
 
-      item.transportationExpense = _parseDouble(expenditureTable.rows[r][7]);
-      item.discount = _parseDouble(expenditureTable.rows[r][8]);
+      item.transportationExpense = parseDouble(table.rows[r][7]);
+      item.discount = parseDouble(table.rows[r][8]);
 
-      item.finalMoney = _parseDouble(expenditureTable.rows[r][9]);
+      item.finalMoney = parseDouble(table.rows[r][9]);
       if (null == item.finalMoney) {
-        final msg = "解析 ${_expenditureListTableName}[$r][9] 失败.";
+        final msg = "解析 ${table.name}[$r][9] 失败.";
         print(msg);
         continue;
       }
 
-      _expenditureDataItemList.add(item);
-      _dailyExpenditureDataMap.update(item.dateInt.data, (double oldValue) {
+      dataList.add(item);
+
+      count++;
+      if (null != countLimit) {
+        if (countLimit <= count) {
+          break;
+        }
+      }
+    }
+
+    return dataList;
+  }
+
+  Map<int, double> _transformExpenditureDataToDailyMap(
+      List<ExpenditureDataItem> dataList) {
+    Map<int, double> dailyDataMap = {};
+
+    for (final item in dataList) {
+      dailyDataMap.update(item.dateInt.data, (double oldValue) {
         return oldValue + item.finalMoney;
       }, ifAbsent: () {
         return item.finalMoney;
       });
     }
-
-    return;
+    return dailyDataMap;
   }
 
-  _readStatisticsTable() async {
+  List<DailyDataItem> _readStatisticsTable(SpreadsheetTable table) {
+    List<DailyDataItem> dataList = [];
+    int lastDate = 0;
     bool needResort = false;
-    final statisticsTable = _decoder.tables[_statisticsTableName];
-    for (int r = 1; r < statisticsTable.maxRows; r++) {
-      final item = await StatisticsDailyDataItem();
+    for (int r = 1; r < table.maxRows; r++) {
+      final item = DailyDataItem();
 
       item.rowIndex = r;
-      item.dateInt = parseExcelDate(statisticsTable.rows[r][1]);
+      item.dateInt = parseExcelDate(table.rows[r][1]);
       if (null == item.dateInt) {
-        final msg = "解析 ${_expenditureListTableName}[$r][1] 失败.";
+        final msg = "解析 ${table.name}[$r][1] 失败.";
         print(msg);
         continue;
       }
-      item.dailyIncomeMoney = _parseDouble(statisticsTable.rows[r][2]) ?? 0;
-      item.sumIncomeMoney = _parseDouble(statisticsTable.rows[r][3]) ?? 0;
-      item.dailyExpenditureMoney = _parseDouble(statisticsTable.rows[r][4]);
-      item.sumExpenditureMoney = _parseDouble(statisticsTable.rows[r][5]) ?? 0;
-      item.leftMoney = _parseDouble(statisticsTable.rows[r][6]) ?? 0;
+      item.dailyIncomeMoney = parseDouble(table.rows[r][2]) ?? 0;
+      item.sumIncomeMoney = parseDouble(table.rows[r][3]) ?? 0;
+      item.dailyExpenditureMoney = parseDouble(table.rows[r][4]); // 花费不补0
+      item.sumExpenditureMoney = parseDouble(table.rows[r][5]) ?? 0;
+      item.leftMoney = parseDouble(table.rows[r][6]) ?? 0;
 
-      _statisticsDailyDataList.add(item);
-      _statisticsDailyDataMap.update(
+      dataList.add(item);
+
+      if (!needResort) {
+        if (lastDate < item.dateInt.data) {
+          lastDate = item.dateInt.data;
+        } else {
+          needResort = true;
+//        assert(false); // 未处理
+          // TODO do some thing
+        }
+      }
+    }
+    if (needResort) {
+//      _dailyDataList.sort(DailyDataItem.sortAsc);
+      // TODO flush to file
+    }
+
+    int i = 0;
+    for (final item in dataList) {
+      item.pos = i++;
+    }
+
+    return dataList;
+  }
+
+  Map<int, List<DailyDataItem>> _transformStatisticsDataToMap(
+      List<DailyDataItem> dataList) {
+    Map<int, List<DailyDataItem>> dataMap = {};
+
+    for (final item in dataList) {
+      dataMap.update(
         item.dateInt.data,
         (list) {
           list.add(item);
@@ -304,232 +360,228 @@ class ExcelMgr {
           return [item];
         },
       );
-
-      if (_lastDate < item.dateInt.data) {
-        _lastDate = item.dateInt.data;
-      } else {
-        needResort = true;
-//        assert(false); // 未处理
-        // TODO do some thing
-      }
     }
-    if (needResort) {
-//      _dailyDataList.sort(DailyDataItem.sortAsc);
-      // TODO flush to file
-    }
-
-    int i = 0;
-    for (final item in _statisticsDailyDataList) {
-      item.pos = i++;
-    }
-
-    return;
+    return dataMap;
   }
 
-  _readDetailTable() async {
-    final table = _decoder.tables[_detailTableName];
-    for (int r = table.maxRows - 1; 0 < r; r--) {
-      final item = await DetailItem();
+  DateFormat _fmt = DateFormat("yyyy/MM/dd HH:mm:ss");
+  List<DetailItem> _readDetailTable(SpreadsheetTable table,
+      {DateInt startDateInt, int daysCount, int lastRowIndex}) {
+    List<DetailItem> dataList = [];
+    int dc = 0;
+    int date = 0;
+    for (int r = (lastRowIndex ?? table.maxRows) - 1; 0 < r; r--) {
+      final item = DetailItem();
       item.rowIndex = r;
-      item.commitTime = table.rows[r][1];
-      item.commitDateInt = parseExcelDate(item.commitTime);
+      item.submittor = table.rows[r][0];
+
+      final dt = parseExcelDateTime(table.rows[r][1]);
+      assert(null != dt);
+      item.commitTimeText = _fmt.format(dt);
+      item.commitDateInt = parseExcelDate(table.rows[r][1]);
       if (null == item.commitDateInt) {
-        final msg = "解析 ${_expenditureListTableName}[$r][0] 失败.";
+        final msg = "解析 ${table.name}[$r][0] 失败.";
         print(msg);
 //        continue;
       }
+      if ((null != startDateInt) &&
+          (item.commitDateInt.data < startDateInt.data)) {
+        break;
+      }
 
       item.name = table.rows[r][2];
-      item.money = table.rows[r][3];
-      _detailList.add(item);
-    }
+      final newName = trimBlankToSingleSpace(item.name);
+      if (item.name != newName) {
+        item.name = newName;
+      }
 
-    _detailList = _detailList.reversed.toList();
+      item.money = parseDouble(table.rows[r][3]);
+      dataList.add(item);
 
-    return;
-  }
-
-  double _parseDouble(dynamic v) {
-    if (null != v) {
-      switch (v.runtimeType) {
-        case String:
-          {
-            try {
-              double d = double.parse(v);
-              return d;
-            } catch (err) {}
+      if (null != daysCount) {
+        if (date != item.commitDateInt.data) {
+          date = item.commitDateInt.data;
+          dc++;
+          if (daysCount <= dc) {
             break;
           }
-        case double:
-          {
-            return v;
-            break;
-          }
-        case int:
-          {
-            return v;
-            break;
-          }
-        default:
-          {
-            assert(false);
-            break;
-          }
+        }
       }
     }
-    return null;
+
+    return dataList.reversed.toList();
   }
 
-  int _parseInt(dynamic v) {
-    if (null != v) {
-      switch (v.runtimeType) {
-        case String:
-          {
-            try {
-              int i = int.parse(v);
-              return i;
-            } catch (err) {}
-            break;
-          }
-        case double:
-          {
-            return v.toInt();
-            break;
-          }
-        case int:
-          {
-            return v;
-            break;
-          }
-        default:
-          {
-            assert(false);
-            break;
-          }
-      }
-    }
-    return null;
-  }
-
-  Future<void> AddDetailData(List<List<String>> lines) async {
+  Future<bool> AddDetailData(List<List<String>> lines) async {
     int i = 0;
     while (!ready) {
       await Future.delayed(Duration(seconds: 1));
       i++;
-      if (5 < i) {
-        return;
+      if (5 <= i) {
+        return false;
       }
     }
 
-    List<StatisticsDailyDataItem> datas = _parseStatisticsDailyData(lines);
+    List<DetailItem> detailDataList = _parseDetailData(lines);
 
-    _addDetailDataToDetailTable(lines, datas);
+    _flushDetailDataToDetailTable(detailDataList);
 
-    _updateStatisticsDataToStatisticsTable(datas);
-    _updateNameListToTable(datas);
+    List<DailyDataItem> dailyDataList =
+        _transformDetailDataToDailyData(detailDataList);
+
+    _flushStatisticsDataToStatisticsTable(dailyDataList);
+    _flushNameListToTable(dailyDataList);
 
     await _file.writeAsBytes(_decoder.encode(), flush: true);
 
-    return;
+    return true;
   }
 
-  _addDetailDataToDetailTable(
-      List<List<String>> lines, List<StatisticsDailyDataItem> datas) {
+  _flushDetailDataToDetailTable(List<DetailItem> detailDataList) {
     final table = _decoder.tables[_detailTableName];
-    for (final line in lines) {
-      final item = DetailItem();
-
+    for (final item in detailDataList) {
       item.rowIndex = table.maxRows;
-      item.commitTime = line[1];
-      item.commitDateInt = parseExcelDate(item.commitTime);
-      item.name = line[2];
-      item.money = line[3];
-
-      _detailList.add(item);
-
       _decoder.insertRow(_detailTableName, item.rowIndex);
-      for (int i = 0; i < line.length; i++) {
-        _decoder.updateCell(_detailTableName, i, item.rowIndex, line[i]);
+
+      if (null != item.submittor) {
+        _decoder.updateCell(_detailTableName, 0, item.rowIndex, item.submittor);
+      }
+      _decoder.updateCell(
+          _detailTableName, 1, item.rowIndex, item.commitTimeText);
+      if (null != item.name) {
+        _decoder.updateCell(_detailTableName, 2, item.rowIndex, item.name);
+      }
+      if (null != item.money) {
+        _decoder.updateCell(
+            _detailTableName, 3, item.rowIndex, valueToString(item.money));
       }
     }
+    _detailList.addAll(detailDataList);
     return;
   }
 
-  List<StatisticsDailyDataItem> _parseStatisticsDailyData(
-      List<List<String>> lines) {
-    Map<int, StatisticsDailyDataItem> datas = {};
+  List<DetailItem> _parseDetailData(List<List<String>> lines) {
+    List<DetailItem> detailDataList = [];
 
     for (final line in lines) {
-      final daily = StatisticsDailyDataItem();
-
-      daily.dateInt = parseExcelDate(line[1]);
-      assert(null != daily.dateInt);
-
-      daily.nameText = line[2] ?? "";
-      daily.dailyIncomeMoney = 0; // 默认0
-      if ((null != line[3]) && ("" != line[3])) {
-        try {
-          daily.dailyIncomeMoney = double.parse(line[3]);
-        } catch (err) {
-          assert(false);
-        }
+      final detailItem = DetailItem();
+      detailItem.submittor = line[0];
+      detailItem.commitTimeText = line[1];
+      detailItem.commitDateInt = parseExcelDate(detailItem.commitTimeText);
+      if (null == detailItem.commitDateInt) {
+        continue;
       }
+      detailItem.name = line[2];
+      final newName = trimBlankToSingleSpace(detailItem.name);
+      if (detailItem.name != newName) {
+        detailItem.name = newName;
+      }
+
+      detailItem.money = parseDouble(line[3]);
+
+      detailDataList.add(detailItem);
+    }
+
+//    dailyDataList.addAll(datas.values.toList());
+
+    return detailDataList;
+  }
+
+  List<DailyDataItem> _transformDetailDataToDailyData(
+      List<DetailItem> detailDataList) {
+    Map<int, DailyDataItem> datas = {};
+    for (final detailItem in detailDataList) {
       datas.update(
-        daily.dateInt.data,
-        (v) {
-          v.nameText += " " + daily.nameText;
-          v.dailyIncomeMoney += daily.dailyIncomeMoney;
-          return v;
+        detailItem.commitDateInt.data,
+        (oldValue) {
+          if (null != detailItem.name) {
+            oldValue.nameText += " " + detailItem.name;
+          }
+          if (null != detailItem.money) {
+            oldValue.dailyIncomeMoney =
+                (oldValue.dailyIncomeMoney ?? 0) + detailItem.money;
+          }
+          return oldValue;
         },
         ifAbsent: () {
-//          daily.dailyExpenditureMoney = 0;
+          final daily = DailyDataItem();
+
+          daily.dateInt = detailItem.commitDateInt;
+          assert(null != daily.dateInt);
+
+          daily.nameText = detailItem.name ?? "";
+          daily.dailyIncomeMoney = detailItem.money;
           daily.sumExpenditureMoney = 0;
+
           return daily;
         },
       );
     }
-    return datas.values.toList()..sort(StatisticsDailyDataItem.sortByDateAsc);
+
+    return datas.values.toList()..sort(DailyDataItem.sortByDateAsc);
   }
 
-  _updateStatisticsDataToStatisticsTable(List<StatisticsDailyDataItem> datas) {
+  _flushStatisticsDataToStatisticsTable(List<DailyDataItem> dailyDataList) {
     // 接到_statisticsDailyDataList的尾部
-    for (final StatisticsDailyDataItem v in datas) {
-      if (_statisticsDailyDataList.isNotEmpty) {
-        final last = _statisticsDailyDataList.last;
-        if (last.dateInt.data == v.dateInt.data) {
-          // 当前第一条与历史最后一条日期相同，需要合并
-          if (0 != v.dailyIncomeMoney) {
-            last.dailyIncomeMoney = last.dailyIncomeMoney + v.dailyIncomeMoney;
-            last.sumIncomeMoney = last.sumIncomeMoney + v.dailyIncomeMoney;
-            last.leftMoney = last.leftMoney + v.dailyIncomeMoney;
 
-            _flushStatisticsItemToDecoder(last); // 更新文件
-          }
-        } else {
-          // 新增
-          v.sumIncomeMoney = last.sumIncomeMoney + v.dailyIncomeMoney;
-          v.sumExpenditureMoney = last.sumExpenditureMoney;
-          v.leftMoney = last.leftMoney + v.dailyIncomeMoney;
+    if (dailyDataList.isEmpty) {
+      return;
+    }
 
-//          v.rowIndex = _statisticsDailyDataList.length + 1;
+    DailyDataItem last;
 
-          _statisticsDailyDataList.add(v);
-          _flushStatisticsItemToDecoder(v); // 更新文件
+    int index = 0;
+    if (_statisticsDailyDataList.isNotEmpty) {
+      // 如果当前第一条与历史最后一条日期相同，需要合并
+      last = _statisticsDailyDataList.last;
+      final newFirst = dailyDataList.first;
+      if (newFirst.dateInt.data == last.dateInt.data) {
+        if (0 != newFirst.dailyIncomeMoney) {
+          last.dailyIncomeMoney =
+              last.dailyIncomeMoney + newFirst.dailyIncomeMoney;
+          last.sumIncomeMoney = last.sumIncomeMoney + newFirst.dailyIncomeMoney;
+          last.leftMoney = last.leftMoney + newFirst.dailyIncomeMoney;
+
+          _flushStatisticsItemToDecoder(last); // 更新文件
         }
-      } else {
-        // 第一条
-//        v.rowIndex = _statisticsDailyDataList.length + 1;
-        v.sumIncomeMoney = v.dailyIncomeMoney;
-        v.leftMoney = v.dailyIncomeMoney;
-        _statisticsDailyDataList.add(v);
-        _flushStatisticsItemToDecoder(v); // 更新文件
+        index++;
       }
+    } else {
+      last = DailyDataItem();
+      last.sumIncomeMoney = 0;
+      last.sumExpenditureMoney = 0;
+      last.leftMoney = 0;
+    }
+
+    for (; index < dailyDataList.length; index++) {
+      DailyDataItem item = dailyDataList[index];
+      item.sumIncomeMoney = last.sumIncomeMoney + (item.dailyIncomeMoney ?? 0);
+      item.sumExpenditureMoney = last.sumExpenditureMoney;
+      item.leftMoney = last.leftMoney + (item.dailyIncomeMoney ?? 0);
+
+      item.pos = _statisticsDailyDataList.length;
+      _statisticsDailyDataList.add(item);
+
+      _flushStatisticsItemToDecoder(item); // 更新文件
+
+      _statisticsDailyDataMap.update(
+        item.dateInt.data,
+        (oldList) {
+          oldList.add(item);
+          return oldList;
+        },
+        ifAbsent: () {
+          return [item];
+        },
+      );
+
+      last = item;
     }
 
     return;
   }
 
-  _flushStatisticsItemToDecoder(StatisticsDailyDataItem v) {
+  _flushStatisticsItemToDecoder(DailyDataItem v) {
     final table = _decoder.tables[_statisticsTableName];
     if (null == v.rowIndex) {
       v.rowIndex = table.maxRows;
@@ -538,41 +590,46 @@ class ExcelMgr {
       assert(v.rowIndex < table.maxRows);
     }
 
+    assert(null != v.rowIndex);
     _decoder.updateCell(_statisticsTableName, 0, v.rowIndex, v.rowIndex);
+    assert(null != v.dateInt);
     _decoder.updateCell(
         _statisticsTableName, 1, v.rowIndex, _formatDateInt(v.dateInt));
 
     if (null != v.dailyIncomeMoney) {
       _decoder.updateCell(_statisticsTableName, 2, v.rowIndex,
-          v.dailyIncomeMoney.toStringAsFixed(2));
+          valueToString(v.dailyIncomeMoney));
     }
     if (null != v.sumIncomeMoney) {
-      _decoder.updateCell(_statisticsTableName, 3, v.rowIndex,
-          v.sumIncomeMoney.toStringAsFixed(2));
+      _decoder.updateCell(
+          _statisticsTableName, 3, v.rowIndex, valueToString(v.sumIncomeMoney));
     }
     if (null != v.dailyExpenditureMoney) {
       _decoder.updateCell(_statisticsTableName, 4, v.rowIndex,
-          v.dailyExpenditureMoney.toStringAsFixed(2));
+          valueToString(v.dailyExpenditureMoney));
     }
     if (null != v.sumExpenditureMoney) {
       _decoder.updateCell(_statisticsTableName, 5, v.rowIndex,
-          v.sumExpenditureMoney.toStringAsFixed(2));
+          valueToString(v.sumExpenditureMoney));
     }
-    _decoder.updateCell(
-        _statisticsTableName, 6, v.rowIndex, v.leftMoney.toStringAsFixed(2));
+    if (null != v.leftMoney) {
+      _decoder.updateCell(
+          _statisticsTableName, 6, v.rowIndex, valueToString(v.leftMoney));
+    }
 
     return;
   }
 
-  _updateNameListToTable(List<StatisticsDailyDataItem> datas) {
+  _flushNameListToTable(List<DailyDataItem> dailyDataList) {
     final table = _decoder.tables[_nameListTableName];
-    for (final v in datas) {
+    for (final item in dailyDataList) {
       // TODO 如果最后日期相同，要合并
+
       final rowIndex = table.maxRows;
       _decoder.insertRow(_nameListTableName, rowIndex);
       _decoder.updateCell(
-          _nameListTableName, 0, rowIndex, _formatDateInt(v.dateInt));
-      _decoder.updateCell(_nameListTableName, 1, rowIndex, v.nameText);
+          _nameListTableName, 0, rowIndex, _formatDateInt(item.dateInt));
+      _decoder.updateCell(_nameListTableName, 1, rowIndex, item.nameText);
     }
   }
 
@@ -598,18 +655,27 @@ class ExcelMgr {
 如有错漏请及时告诉我。感谢大家的支持和发心。祝愿大家获得药师七佛的加持护佑、健康长寿、衣食丰足、无疾除恶、福慧俱足、得生净土！""";
   }
 
-  void AddExpenditureDataTable(ExpenditureDataItem expenditure) {
-    _updateExpenditureDataToExpenditureTable(expenditure);
+  Future<bool> AddExpenditureDataTable(ExpenditureDataItem expenditure) async {
+    int i = 0;
+    while (!ready) {
+      await Future.delayed(Duration(seconds: 1));
+      i++;
+      if (5 <= i) {
+        return false;
+      }
+    }
 
-    _updateExpenditureMoneyToStatisticsTable2(
+    _flushExpenditureDataToExpenditureTable(expenditure);
+
+    _flushExpenditureMoneyToStatisticsTable2(
         expenditure.dateInt, expenditure.finalMoney);
 
-    _file.writeAsBytes(_decoder.encode(), flush: true);
+    await _file.writeAsBytes(_decoder.encode(), flush: true);
 
-    return;
+    return true;
   }
 
-  _updateExpenditureDataToExpenditureTable(ExpenditureDataItem expenditure) {
+  _flushExpenditureDataToExpenditureTable(ExpenditureDataItem expenditure) {
     expenditure.ID = _expenditureDataItemList.length + 1;
 
     _expenditureDataItemList.add(expenditure);
@@ -730,7 +796,7 @@ class ExcelMgr {
 //    return;
 //  }
 
-  _updateExpenditureMoneyToStatisticsTable2(DateInt dateInt, double money) {
+  _flushExpenditureMoneyToStatisticsTable2(DateInt dateInt, double money) {
     String type;
     int pos;
 
@@ -739,7 +805,7 @@ class ExcelMgr {
       (list) {
         type = "exist";
 
-        final StatisticsDailyDataItem item = list.last;
+        final DailyDataItem item = list.last;
 
         item.dailyExpenditureMoney = (item.dailyExpenditureMoney ?? 0) + money;
         item.sumExpenditureMoney = (item.sumExpenditureMoney ?? 0) + money;
@@ -754,7 +820,7 @@ class ExcelMgr {
       ifAbsent: () {
         type = "addNew";
 
-        final newItem = StatisticsDailyDataItem();
+        final newItem = DailyDataItem();
 
         // 倒着找位置
 //        pos = _statisticsDailyDataList.length - 1;
@@ -790,7 +856,7 @@ class ExcelMgr {
         if (null == type) {
           pos = 0;
           type = "addNew";
-          final newItem = StatisticsDailyDataItem();
+          final newItem = DailyDataItem();
           newItem.rowIndex = 1;
           newItem.dateInt = dateInt;
           newItem.sumIncomeMoney = 0;
@@ -836,6 +902,10 @@ class ExcelMgr {
   }
 
   _checkOut() async {
+    /// 检查统计数据与支出清单是否相吻合
+    /// 如果有日支出不相等的地方，
+    /// 就用支出清单的金额，替代统计数据中对应的金额
+
     bool modified = false;
     int minPos;
     String type;
@@ -843,7 +913,7 @@ class ExcelMgr {
     for (final entry in _dailyExpenditureDataMap.entries) {
       int date = entry.key;
       double money = entry.value;
-      await testLimit++;
+      testLimit++;
       if (2 < testLimit) {
 //        return;
       }
@@ -861,7 +931,7 @@ class ExcelMgr {
 
           if (!hasSame) {
             type = "update";
-            StatisticsDailyDataItem curItem = list.last;
+            DailyDataItem curItem = list.last;
 
             if ((null == minPos) || (curItem.pos < minPos)) {
               minPos = curItem.pos;
@@ -890,7 +960,7 @@ class ExcelMgr {
           return list;
         },
         ifAbsent: () {
-          final newItem = StatisticsDailyDataItem();
+          final newItem = DailyDataItem();
           modified = true;
           type = null;
 
@@ -955,7 +1025,7 @@ class ExcelMgr {
           if ("addNew" == type) {
             assert(modified);
             // 更新后面的rowIndex和pos
-            StatisticsDailyDataItem last = _statisticsDailyDataList[minPos];
+            DailyDataItem last = _statisticsDailyDataList[minPos];
             for (int i = minPos + 1; i < _statisticsDailyDataList.length; i++) {
               final item = _statisticsDailyDataList[i];
               item.pos = i;
@@ -986,9 +1056,9 @@ class ExcelMgr {
 
     if (modified) {
       // 从新计算剩下部分的 "总支出" 与 "剩余"
-      StatisticsDailyDataItem last;
+      DailyDataItem last;
       if (0 == minPos) {
-        last = StatisticsDailyDataItem();
+        last = DailyDataItem();
         last.sumExpenditureMoney = 0;
       } else {
         last = _statisticsDailyDataList[minPos];
@@ -1012,20 +1082,99 @@ class ExcelMgr {
     return;
   }
 
-//  _testShowDate(StatisticsDailyDataItem cur) {
-//    String msg = "${cur.dateInt.data}\t[";
-//    int i = 0;
-//    for (final item in _statisticsDailyDataList) {
-////      assert(i == item.pos);
-//      msg += "${item.dateInt.data}:${item.pos},";
-//      i++;
-//    }
-//    msg += "]\n";
-//    print(msg);
-//  }
+  Future<bool> ImportDetailData(
+      SpreadsheetDecoder decoder, String tableName) async {
+    int i = 0;
+    while (!ready) {
+      await Future.delayed(Duration(seconds: 1));
+      i++;
+      if (5 <= i) {
+        return false;
+      }
+    }
+
+    List<DetailItem> detailDataList =
+        _readDetailTable(decoder.tables[tableName]);
+    _flushDetailDataToDetailTable(detailDataList);
+
+    List<DailyDataItem> dailyDataList =
+        _transformDetailDataToDailyData(detailDataList);
+
+    _flushStatisticsDataToStatisticsTable(dailyDataList);
+    _flushNameListToTable(dailyDataList);
+
+    await _file.writeAsBytes(_decoder.encode(), flush: true);
+
+    return true;
+  }
+
+  Future<bool> ImportExpenditureData(
+      SpreadsheetDecoder decoder, String tableName) async {
+    int i = 0;
+    while (!ready) {
+      await Future.delayed(Duration(seconds: 1));
+      i++;
+      if (5 <= i) {
+        return false;
+      }
+    }
+
+    List<ExpenditureDataItem> expenditureDataList =
+        _readExpenditureTable(decoder.tables[tableName]);
+
+    for (final item in expenditureDataList) {
+      _flushExpenditureDataToExpenditureTable(item);
+    }
+
+    Map<int, double> dailyDataMap =
+        _transformExpenditureDataToDailyMap(expenditureDataList);
+
+    dailyDataMap.forEach((int date, double money) {
+      _flushExpenditureMoneyToStatisticsTable2(DateInt.fromInt(date), money);
+    });
+
+    await _file.writeAsBytes(_decoder.encode(), flush: true);
+
+    return true;
+  }
+
+  Future<void> prepareDetailData(DateInt startDateInt) async {
+    int lastRowIndex;
+    if (_detailList.isNotEmpty) {
+      final first = _detailList.first;
+      if (first.commitDateInt.data <= startDateInt.data) {
+//        int startPos = _getDetailListStartPos(startDateInt);
+//        assert(null != startPos);
+        return;
+      }
+      lastRowIndex = first.rowIndex;
+    }
+
+    List<DetailItem> dataList = _readDetailTable(
+      _decoder.tables[_detailTableName],
+      startDateInt: startDateInt,
+      lastRowIndex: lastRowIndex,
+    );
+
+    if (dataList.isNotEmpty) {
+      dataList.addAll(_detailList);
+      _detailList = dataList;
+    }
+
+    return;
+  }
+
+  DateInt getFirstDetailDate() {
+    final table = _decoder.tables[_detailTableName];
+    if (1 <= table.maxRows) {
+      return parseExcelDate(table.rows[1][1]);
+    }
+
+    return null;
+  }
 }
 
-class StatisticsDailyDataItem {
+class DailyDataItem {
   int pos;
   int rowIndex;
   DateInt dateInt;
@@ -1036,8 +1185,7 @@ class StatisticsDailyDataItem {
   double leftMoney;
   String nameText;
 
-  static int sortByDateAsc(
-      StatisticsDailyDataItem a, StatisticsDailyDataItem b) {
+  static int sortByDateAsc(DailyDataItem a, DailyDataItem b) {
     if (a.dateInt.data < b.dateInt.data) {
       return -1;
     } else if (a.dateInt.data == b.dateInt.data) {
@@ -1063,8 +1211,9 @@ class ExpenditureDataItem {
 
 class DetailItem {
   int rowIndex;
-  String commitTime;
+  String submittor;
+  String commitTimeText;
   DateInt commitDateInt;
   String name;
-  String money;
+  double money;
 }

@@ -7,6 +7,8 @@ import 'common_util.dart';
 import 'excel_mgr.dart';
 
 class AddExpenditureDataPage extends StatefulWidget {
+  final Widget title;
+  AddExpenditureDataPage(this.title) {}
   @override
   State<StatefulWidget> createState() {
     return _AddExpenditureDataPageState();
@@ -14,13 +16,21 @@ class AddExpenditureDataPage extends StatefulWidget {
 }
 
 class _AddExpenditureDataPageState extends State<AddExpenditureDataPage> {
+  _AddExpenditureDataPageState() {
+    final fontSize = _width / 15;
+    _textStyle = TextStyle(fontSize: fontSize);
+    _boxWidth = _width * 40 / 100;
+    _boxHight = fontSize * 3;
+  }
+
   double _width = MediaQueryData.fromWindow(window).size.width;
   double _height = MediaQueryData.fromWindow(window).size.height;
   TextStyle _textStyle;
   double _boxWidth;
   double _boxHight;
 
-  ExcelMgr _excelMgr = ExcelMgr(onFinishedFn: (bool ok, String msg) {});
+  ExcelMgr _excelMgr =
+      ExcelMgr(onFinishedFn: (ExcelMgr mgr, bool ok, String msg) {});
 
   DateTime _pickDate;
   DateFormat _fmt = DateFormat("yyyy/M/d");
@@ -41,12 +51,6 @@ class _AddExpenditureDataPageState extends State<AddExpenditureDataPage> {
   double _discount;
   double _finalMoney;
 
-  _AddExpenditureDataPageState() {
-    _textStyle = TextStyle(fontSize: _width / 15);
-    _boxWidth = _width * 40 / 100;
-    _boxHight = _width * 12 / 100;
-  }
-
   @override
   void dispose() {
     _dateController.dispose();
@@ -56,15 +60,17 @@ class _AddExpenditureDataPageState extends State<AddExpenditureDataPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Scrollbar(
-        child: SingleChildScrollView(
-          child: _buildBody(),
+        appBar: AppBar(
+          title: FittedBox(child: widget.title),
+          backgroundColor: Colors.grey[350],
         ),
-      ),
-    );
+        body: Builder(builder: (BuildContext context2) {
+          return Scrollbar(
+              child: SingleChildScrollView(child: _buildBody(context2)));
+        }));
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(BuildContext context) {
     return Column(
       children: [
         Divider(),
@@ -94,7 +100,7 @@ class _AddExpenditureDataPageState extends State<AddExpenditureDataPage> {
         _buildNormalRow("总金额：", _finalMoneyController, TextInputType.number,
             tailStr: "元", enable: false),
         Divider(),
-        _buildButtonRow(),
+        _buildButtonRow(context),
         Divider(),
       ],
     );
@@ -189,7 +195,7 @@ class _AddExpenditureDataPageState extends State<AddExpenditureDataPage> {
           width: _width * 30 / 100,
           height: _boxHight,
           alignment: Alignment.centerRight,
-          child: Text(title, style: _textStyle),
+          child: FittedBox(child: Text(title, style: _textStyle)),
         ),
         Container(
           color: Colors.grey[200],
@@ -327,7 +333,7 @@ class _AddExpenditureDataPageState extends State<AddExpenditureDataPage> {
     }
   }
 
-  Widget _buildButtonRow() {
+  Widget _buildButtonRow(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: <Widget>[
@@ -342,7 +348,7 @@ class _AddExpenditureDataPageState extends State<AddExpenditureDataPage> {
         RaisedButton.icon(
           icon: Icon(Icons.done),
           label: Text("提交", style: TextStyle(fontSize: _width / 20)),
-          onPressed: () {
+          onPressed: () async {
             final expenditure = ExpenditureDataItem();
             if (null == _pickDate) {
               return;
@@ -375,8 +381,21 @@ class _AddExpenditureDataPageState extends State<AddExpenditureDataPage> {
             assert(null != _finalMoney);
             expenditure.finalMoney = _finalMoney;
 
-            _excelMgr.AddExpenditureDataTable(expenditure);
-            _clear();
+            showLoading(context); // 显示等待画面
+
+            await Future.delayed(Duration(milliseconds: 200)); // 等待loading画面显示
+
+            bool ok = await _excelMgr.AddExpenditureDataTable(expenditure);
+            Navigator.of(context).pop(); // 取消等待画面
+
+            String msg;
+            if (ok) {
+              msg = "添加成功！";
+              _clear();
+            } else {
+              msg = "添加失败！";
+            }
+            showMsg(context, msg);
           },
         ),
       ],

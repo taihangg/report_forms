@@ -77,4 +77,18 @@ class KeyValueFile {
     }
     return _prefs.setString(key, value);
   }
+
+  Future<int> getInt({@required String key}) async {
+    if (null == _prefs) {
+      await _init();
+    }
+    return _prefs.getInt(key);
+  }
+
+  Future<bool> setInt({@required String key, @required int value}) async {
+    if (null == _prefs) {
+      await _init();
+    }
+    return _prefs.setInt(key, value);
+  }
 }

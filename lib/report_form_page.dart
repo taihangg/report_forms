@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui';
 import 'dart:ui' as ui;
+import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/cupertino.dart';
@@ -24,9 +25,21 @@ class ReportFormPage extends StatefulWidget {
 
 class _ReportFormPageState extends State<ReportFormPage> {
   _ReportFormPageState() {
-    Future.delayed(Duration(seconds: 1), () {
-      _excelMgr = ExcelMgr(onFinishedFn: _onExcelMgrFinished);
-    });
+    int defaultLatestDetailDataDayCount = 15;
+    final today = DateTime.now();
+    final startDate = DateTime(
+        today.year, today.month, today.day - defaultLatestDetailDataDayCount);
+    _detailStartDateInt = DateInt(startDate);
+    _detailStartDateText = formatDateInt(_detailStartDateInt);
+
+//    Future.delayed(Duration(seconds: 1), () {
+    _excelMgr = ExcelMgr(
+      latestDetailDataDayCount: defaultLatestDetailDataDayCount,
+      onFinishedFn: _onExcelMgrFinished,
+    );
+//    });
+
+    // 默认显示最近15天的详细数据
   }
 
   double _width = MediaQueryData.fromWindow(window).size.width;
@@ -34,25 +47,61 @@ class _ReportFormPageState extends State<ReportFormPage> {
 
   ExcelMgr _excelMgr;
 
+  String _msg;
+  Color _color = Colors.grey;
+
+  bool _initing = true;
+
+  void _onExcelMgrFinished(ExcelMgr mgr, bool ok, String msg) async {
+    _initing = false;
+
+    _msg = msg;
+    _color = Colors.red;
+    if (ok) {
+      _refreshDetailListFirstShowPos(mgr);
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   GlobalKey _summaryWidgetKey = GlobalKey();
   List<GlobalKey> _statisticsWidgetKeyList = [];
-  GlobalKey _expenditureWidgetKey = GlobalKey();
+  List<GlobalKey> _expenditureWidgetKeyList = [];
   List<GlobalKey> _detailWidgetKeyList = [];
+
+  _initGlobalKeys() {
+    _statisticsWidgetKeyList.clear();
+    _expenditureWidgetKeyList.clear();
+    _detailWidgetKeyList.clear();
+  }
+
+  DateInt _detailStartDateInt;
+  String _detailStartDateText;
+  int _detailPerPageLimit = 100;
+  int _detailListFirstShowPos;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
 //      appBar: AppBar(title: Center(child: Text("分享"))),
       body: Builder(builder: (BuildContext context) {
-        return _buildPage(context);
+        return _buildBody(context);
       }),
     );
   }
 
-  Widget _buildPage(BuildContext context) {
+  Widget _buildBody(BuildContext context) {
     if (_initing) {
-      return buildLoadingView();
+      return buildLoadingCard();
     }
+
+    if (!_excelMgr.ready) {
+      return _buildErrorMsgWidget(_msg, _color);
+    }
+
+    _initGlobalKeys();
+    _initFutureBuilderCount();
 
     return Column(
 //      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -61,7 +110,7 @@ class _ReportFormPageState extends State<ReportFormPage> {
         _buildShareButton(),
         Divider(),
 //        SizedBox(height: _width * 5 / 100),
-        _buildBody(context),
+        _buildContent(context),
         SizedBox(height: _width * 5 / 100),
       ],
     );
@@ -71,46 +120,42 @@ class _ReportFormPageState extends State<ReportFormPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: <Widget>[
-//        RaisedButton.icon(
-////          icon: Icon(Icons.camera_alt),
-//          icon: Icon(Icons.refresh),
-//          label: Text("刷新", style: TextStyle(fontSize: _width / 20)),
-//          onPressed: () {
-//            setState(() {});
-//          },
-//        ),
-        RaisedButton.icon(
-          icon: Icon(Icons.share),
-          label: Text("分享报表截图", style: TextStyle(fontSize: _width / 20)),
+        FittedBox(
+            child: RaisedButton.icon(
+          color: Colors.lightGreenAccent,
+          icon: Icon(Icons.share, size: _width / 13),
+          label: Text("导出/分享报表", style: TextStyle(fontSize: _width / 13)),
           onPressed: () async {
             // 如果分享的图片名字一样，微信、qq的缩略图不会变化，可以用时间戳组合命名
+            if (!isAllFutureBuilderLoaded) {
+              showMsg(context, "尚未加载完成，请稍后再试！");
+              return;
+            }
 
             int show = 0;
             if (0 == show) {
-              final path = _excelMgr.path ?? "/storage/emulated/0/供灯报表数据";
               try {
-                String fullPath = path + "/summary.png";
+                String fullPath = defaultExportFileDir + "/summary.png";
                 await saveAsPicture(_summaryWidgetKey, fullPath);
                 final list = [fullPath];
 
                 for (int i = 0; i < _statisticsWidgetKeyList.length; i++) {
-                  fullPath = path + "/statistics${i + 1}.png";
+                  fullPath = defaultExportFileDir + "/statistics${i + 1}.png";
                   await saveAsPicture(_statisticsWidgetKeyList[i], fullPath);
                   list.add(fullPath);
                 }
 
-                fullPath = path + "/expenditure.png";
-                await saveAsPicture(_expenditureWidgetKey, fullPath);
-                list.add(fullPath);
-
-                for (int i = 0; i < _detailWidgetKeyList.length; i++) {
-                  fullPath = path + "/detail${i + 1}.png";
-                  await saveAsPicture(_detailWidgetKeyList[i], fullPath);
+                for (int i = 0; i < _expenditureWidgetKeyList.length; i++) {
+                  fullPath = defaultExportFileDir + "/expenditure.png";
+                  await saveAsPicture(_expenditureWidgetKeyList[i], fullPath);
                   list.add(fullPath);
                 }
 
-//                final dir = await _defaultExportDirectory();
-//                final file = File(dir.path + "/abc.png");
+                for (int i = 0; i < _detailWidgetKeyList.length; i++) {
+                  fullPath = defaultExportFileDir + "/detail${i + 1}.png";
+                  await saveAsPicture(_detailWidgetKeyList[i], fullPath);
+                  list.add(fullPath);
+                }
 
                 await ShareExtend.shareMultiple(list, "image");
               } catch (err) {
@@ -128,7 +173,7 @@ class _ReportFormPageState extends State<ReportFormPage> {
                     await getImageData(_statisticsWidgetKeyList[i]);
               }
               files["expenditure_${tsStr}.png"] =
-                  await getImageData(_expenditureWidgetKey);
+                  await getImageData(_expenditureWidgetKeyList[0]);
 
               for (int i = 0; i < _detailWidgetKeyList.length; i++) {
                 files["detail_${i + 1}_${tsStr}.png"] =
@@ -152,7 +197,7 @@ class _ReportFormPageState extends State<ReportFormPage> {
               );
             }
           },
-        ),
+        )),
       ],
     );
   }
@@ -170,42 +215,83 @@ class _ReportFormPageState extends State<ReportFormPage> {
     return dir;
   }
 
-  String _msg = "";
-  Color _color = Colors.grey;
+  bool _first = true;
+  Widget _buildContent(BuildContext context) {
+    _waitMilliseconds = _firstWaitMilliseconds;
 
-  bool _initing = true;
-  bool _excelMgrReady = false;
-  void _onExcelMgrFinished(bool ok, String msg) {
-    _initing = false;
-    _excelMgrReady = ok;
-    _msg = msg;
-    _color = Colors.red;
-    if (mounted) {
-      setState(() {});
-    }
-  }
+    final children1 = <Widget>[
+      _buildSummary(),
+      ..._buildDetailWidgetList(),
+      ..._buildStatisticsWidgetList(),
+      _buildExpenditureWidget(),
+    ];
 
-  Widget _buildBody(BuildContext context) {
-    if (!_excelMgrReady) {
-      return _buildErrorMsgWidget(_msg, _color);
+    final first = _first;
+    List<Widget> children2;
+    if (_first) {
+      _first = false;
+      children2 = children1.reversed
+          .map((child) {
+            return _buildFutureBuilder(child);
+          })
+          .toList()
+          .reversed
+          .toList();
     }
 
     return Expanded(
       child: Scrollbar(
         child: SingleChildScrollView(
-          child: Column(
-            children: <Widget>[
-              _buildSummary(),
-//              SizedBox(height: _width * 2 / 100),
-              ..._buildStatisticsWidgetList(),
-              _buildExpenditureWidget(),
-              ..._buildDetailWidgetList(),
-//              Divider(),
-            ],
-          ),
+//          reverse : true,
+          child: Wrap(
+              alignment: WrapAlignment.spaceEvenly,
+              children: first ? children2 : children1),
         ),
       ),
     );
+  }
+
+  int _waitMilliseconds;
+  final int _waitStep = 500;
+  final int _firstWaitMilliseconds = 500;
+  Widget _loading;
+
+  int _buildCount;
+  int _loadedCount;
+
+  bool get isAllFutureBuilderLoaded => (_buildCount == _loadedCount);
+
+  _initFutureBuilderCount() {
+    _buildCount = 0;
+    _loadedCount = 0;
+  }
+
+  Widget _buildFutureBuilder(Widget child) {
+    final thisWait = _waitMilliseconds;
+    _waitMilliseconds += _waitStep;
+    if (null == _loading) {
+      _loading = buildLoadingView(
+          topPadding: _width / 20,
+          height: _width * 33 / 100,
+          width: _width * 30 / 100);
+    }
+
+    return FutureBuilder(
+        future: Future.delayed(Duration(milliseconds: thisWait)),
+        builder: (BuildContext context, AsyncSnapshot snapshot) {
+          if (ConnectionState.done != snapshot.connectionState) {
+            _buildCount++;
+            return _loading;
+          } else {
+            _loadedCount++;
+            if (isAllFutureBuilderLoaded) {
+              Future(() {
+                showMsg(context, "加载完成！");
+              });
+            }
+            return child;
+          }
+        });
   }
 
 //  Widget _buildBody(BuildContext context) {
@@ -274,6 +360,10 @@ class _ReportFormPageState extends State<ReportFormPage> {
   }
 
   List<Widget> _buildStatisticsWidgetList() {
+    if (_excelMgr.statisticsDailyDataList.isEmpty) {
+      return [Divider(), _buildEmptyHint("暂无统计记录")];
+    }
+
     List<Widget> children = [];
     int keyIndex = 0;
     int pageLimit = 100;
@@ -302,8 +392,8 @@ class _ReportFormPageState extends State<ReportFormPage> {
   }
 
   int _statisticsWidthTime = 1;
-  Widget _buildStatisticsWidget(GlobalKey key, String titleTail,
-      Iterable<StatisticsDailyDataItem> datas) {
+  Widget _buildStatisticsWidget(
+      GlobalKey key, String titleTail, Iterable<DailyDataItem> datas) {
     return RepaintBoundary(
       key: key,
       child: Card(
@@ -348,7 +438,7 @@ class _ReportFormPageState extends State<ReportFormPage> {
         alignment: Alignment.center);
   }
 
-  Widget _buildStatisticsDataRow(StatisticsDailyDataItem v) {
+  Widget _buildStatisticsDataRow(DailyDataItem v) {
 //    print("${v.ID}");
     List<dynamic> datas = [
       v.rowIndex,
@@ -379,6 +469,7 @@ class _ReportFormPageState extends State<ReportFormPage> {
         width: _width,
         height: _width * 10 / 100,
         child: FittedBox(
+            fit: BoxFit.fill,
             child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(datas.length, (i) {
@@ -396,65 +487,32 @@ class _ReportFormPageState extends State<ReportFormPage> {
         border: Border.all(width: 0.5, color: Colors.grey[600]));
     final style = TextStyle(fontSize: times * _width / 25);
 
-    final str = _toString(v);
+    final str = valueToString(v);
     final text = Text(str,
         style: style,
 //      softWrap: true,
         overflow: TextOverflow.ellipsis);
 
-    if (20 < str.length) {
-      return Container(
-          height: times * _width * 10 / 100,
-          width: times * width,
-          alignment: alignment ?? Alignment.centerRight,
-          decoration: decoration,
-          child: text);
-    }
-
     return Container(
-        height: _width * 10 / 100,
-        width: width,
-        alignment: alignment ?? Alignment.centerRight,
-        decoration: decoration,
-        child: FittedBox(child: text));
-  }
-
-  String _toString(dynamic v) {
-    if (null == v) {
-      return " ";
-    }
-
-    switch (v.runtimeType) {
-      case String:
-        {
-          if ("" == v) {
-            return " ";
-          }
-          return v;
-        }
-      case double:
-        {
-          return (v as double).toStringAsFixed(2);
-        }
-      case int:
-        {
-          return "$v";
-        }
-      case DateInt:
-        {
-          return _formatDateInt(v);
-        }
-      default:
-        {
-          assert(false);
-          break;
-        }
-    }
+      height: _width * 10 / 100,
+      width: width,
+      alignment: alignment ?? Alignment.centerRight,
+      decoration: decoration,
+      child: (20 < str.length) ? text : FittedBox(child: text),
+    );
   }
 
   Widget _buildExpenditureWidget() {
+    if (_excelMgr.expenditureDataItemList.isEmpty) {
+      return Column(children: [Divider(), _buildEmptyHint("暂无支出记录")]);
+    }
+
+    if (_expenditureWidgetKeyList.isEmpty) {
+      _expenditureWidgetKeyList.add(GlobalKey());
+    }
+
     return RepaintBoundary(
-      key: _expenditureWidgetKey,
+      key: _expenditureWidgetKeyList[0],
       child: Card(
         elevation: 5.0,
         color: Colors.grey[100],
@@ -480,10 +538,6 @@ class _ReportFormPageState extends State<ReportFormPage> {
         ),
       ),
     );
-  }
-
-  String _formatDateInt(DateInt v) {
-    return "${v.year}/${v.month}/${v.day}";
   }
 
   Widget _buildExpenditureTitleRow() {
@@ -536,6 +590,7 @@ class _ReportFormPageState extends State<ReportFormPage> {
     ];
     assert(widthList.length == datas.length);
     return FittedBox(
+        fit: BoxFit.fill,
         child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(datas.length, (i) {
@@ -544,22 +599,36 @@ class _ReportFormPageState extends State<ReportFormPage> {
             })));
   }
 
-  int _detailAllShowCount = 200;
-  int _detailPerPageLimit = 100;
+  Widget _buildEmptyHint(String msg) {
+    return Container(
+        width: _width * 90 / 100,
+        height: _width * 10 / 100,
+        alignment: Alignment.topCenter,
+        child: FittedBox(
+            child: Text(msg,
+                style: TextStyle(fontSize: _width / 15, color: Colors.red))));
+  }
+
   List<Widget> _buildDetailWidgetList() {
-    List<Widget> children = [];
+    if (_excelMgr.detailList.isEmpty) {
+      return [Divider(), _buildEmptyHint("暂无随喜记录")];
+    }
+
+    assert(null != _detailListFirstShowPos);
+    List<Widget> children = [Divider(), _buildDetailStartDateButton()];
+
     int keyIndex = 0;
 
-    int showCount = _detailAllShowCount; // 实际显示数量
-    int firstPos = _excelMgr.detailList.length - _detailAllShowCount;
-    if (firstPos < 0) {
-      firstPos = 0;
+    int showCount = _excelMgr.detailList.length - _detailListFirstShowPos + 1;
+
+    if (_detailListFirstShowPos < 0) {
+      _detailListFirstShowPos = 0;
       showCount = _excelMgr.detailList.length;
     }
-    int pageCount =
+    int detailPageCount =
         (showCount + _detailPerPageLimit - 1) ~/ _detailPerPageLimit;
 
-    for (int index = firstPos;
+    for (int index = _detailListFirstShowPos;
         index < _excelMgr.detailList.length;
         index += _detailPerPageLimit) {
       if (_detailWidgetKeyList.length <= keyIndex) {
@@ -572,13 +641,90 @@ class _ReportFormPageState extends State<ReportFormPage> {
           : _excelMgr.detailList.length;
       final list = _excelMgr.detailList.getRange(index, end);
 
-      children
-          .add(_buildDetailWidget(key, " ${keyIndex + 1}/${pageCount}", list));
+      children.add(
+          _buildDetailWidget(key, " ${keyIndex + 1}/${detailPageCount}", list));
 
       keyIndex++;
     }
 
     return children;
+  }
+
+  _refreshDetailListFirstShowPos(ExcelMgr mgr) {
+    _detailListFirstShowPos = null;
+    if (mgr.detailList.isEmpty) {
+      return;
+    }
+
+    // 最少显示最后一天的数据，除非确实没有数据
+    final lastDateInt = mgr.detailList.last.commitDateInt;
+    if (lastDateInt.data < _detailStartDateInt.data) {
+      _detailStartDateInt = lastDateInt;
+      _detailStartDateText = formatDateInt(_detailStartDateInt);
+    }
+
+    int i;
+    for (i = mgr.detailList.length - 1; 0 <= i; i--) {
+      if (mgr.detailList[i].commitDateInt.data < _detailStartDateInt.data) {
+        break;
+      }
+    }
+
+    _detailListFirstShowPos = i + 1;
+
+    assert(_detailListFirstShowPos < mgr.detailList.length);
+    return;
+  }
+
+  Widget _buildDetailStartDateButton() {
+    return GestureDetector(
+      child: FittedBox(
+        child: Card(
+          color: Colors.yellow,
+          child: Container(
+            alignment: Alignment.center,
+            child: FittedBox(
+              child: Text(
+                "随喜与名单记录起始显示\n日期：" + _detailStartDateText,
+                style: TextStyle(fontSize: _width / 14),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      ),
+      onTap: () async {
+        final today = DateTime.now();
+
+        final firstDateInt = _excelMgr.getFirstDetailDate();
+        DateTime firstDate = (null != firstDateInt) ? firstDateInt.dt : today;
+        DateTime lastDate = (_excelMgr.detailList.isNotEmpty)
+            ? _excelMgr.detailList.last.commitDateInt.dt
+            : today;
+
+        DateTime initialDate = _detailStartDateInt.dt;
+        if (initialDate.isBefore(firstDate)) {
+          initialDate = firstDate;
+        }
+        if (initialDate.isAfter(lastDate)) {
+          initialDate = lastDate;
+        }
+
+        final newDate = await showDatePicker(
+          context: context,
+          initialDate: initialDate,
+          firstDate: firstDate,
+          lastDate: lastDate,
+        );
+        if (null != newDate) {
+          _detailStartDateInt = DateInt(newDate);
+          _detailStartDateText = formatDateInt(_detailStartDateInt);
+          await _excelMgr.prepareDetailData(_detailStartDateInt);
+          _refreshDetailListFirstShowPos(_excelMgr);
+          setState(() {});
+        }
+      },
+    );
   }
 
   Widget _buildDetailWidget(
@@ -589,6 +735,7 @@ class _ReportFormPageState extends State<ReportFormPage> {
         width: _width,
         alignment: Alignment.center,
         child: FittedBox(
+          fit: BoxFit.fill,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -671,12 +818,12 @@ class _ReportFormPageState extends State<ReportFormPage> {
 //    final maxTextLengh = 15;
     List<dynamic> datas = [
 //      v.rowIndex,
-      v.commitTime,
+      v.commitTimeText,
 //      (v.name.length < maxTextLengh)
 //          ? v.name
 //          : v.name.substring(0, maxTextLengh - 1), // 字数太多，显示不友好
       v.name,
-      v.money
+      valueToString(v.money),
     ];
     return _buildDetailRow(datas, alignment: Alignment.centerLeft);
   }

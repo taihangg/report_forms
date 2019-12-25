@@ -309,12 +309,13 @@ class DateInt {
   }
 }
 
-Widget buildLoadingView({double topPadding, double height}) {
+Widget buildLoadingView({double topPadding, double height, double width}) {
   final double _width = MediaQueryData.fromWindow(window).size.width;
   final double _height = MediaQueryData.fromWindow(window).size.height;
   return Container(
 //      color: Colors.orange,
       alignment: Alignment.topCenter,
+      width: width,
       height: height ?? (_height / 2),
       child: Padding(
           padding: EdgeInsets.only(top: topPadding ?? (_height / 5)),
@@ -333,10 +334,39 @@ Widget buildLoadingView({double topPadding, double height}) {
           ));
 }
 
+Widget buildLoadingCard() {
+  return Card(
+      child: Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      buildLoadingView(),
+      Card(
+        color: Colors.lightBlueAccent,
+        child: FittedBox(
+            child: Text("正在处理\n请稍等……",
+                style: TextStyle(fontSize: 50, color: Colors.deepOrange))),
+      )
+    ],
+  ));
+}
+
+showLoading(BuildContext context) {
+  // 需要停止显示的时候，要调用Navigator.of(context).pop();
+  showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return buildLoadingCard();
+      });
+}
+
 final RegExp _reDate = RegExp(
     r"(?<year>[0-9]{4})[^0-9](?<month>[0-9]{1,2})[^0-9](?<day>[0-9]{1,2})");
-final _dtBase = DateTime(1900, 1, 0);
+final _dtBase = DateTime(1900, 1, -1);
 DateInt parseExcelDate(dynamic value) {
+  if (null == value) {
+    return null;
+  }
+
   if (value is String) {
     final match = _reDate.firstMatch(value);
     if (null == match) {
@@ -350,8 +380,7 @@ DateInt parseExcelDate(dynamic value) {
     return DateInt.fromInt(year * 10000 + month * 100 + day);
   } else if (value is double) {
     try {
-      int days = value.toInt();
-      DateTime dt = _dtBase.add(Duration(days: days - 1));
+      DateTime dt = _dtBase.add(Duration(days: value.toInt()));
       return DateInt(dt);
     } catch (err) {
       return null;
@@ -361,11 +390,10 @@ DateInt parseExcelDate(dynamic value) {
 
 final RegExp _reDateTime = RegExp(
     r"(?<year>[0-9]{4})[^0-9](?<month>[0-9]{1,2})[^0-9](?<day>[0-9]{1,2})[^0-9](?<hour>[0-9]{1,2})[^0-9](?<minute>[0-9]{1,2})[^0-9](?<second>[0-9]{1,2})");
+final _dtBase2 = DateTime(1900, 1, -1, 0, 0, 1);
 DateTime parseExcelDateTime(dynamic value) {
-  assert(false); // 还没测试过
-
   if (value is String) {
-    final match = _reDate.firstMatch(value);
+    final match = _reDateTime.firstMatch(value);
     if (null == match) {
       return null;
     }
@@ -380,9 +408,16 @@ DateTime parseExcelDateTime(dynamic value) {
     return DateTime(year, month, day, hour, minute, second);
   } else if (value is double) {
     try {
-      assert(false); // 还没测试过
+//      int days = value.toInt();
+//      double tmp = (value - days) * 24;
+//      int hours = tmp.toInt();
+//      tmp = (tmp - hours) * 60;
+//      int minutes = tmp.toInt();
+//      tmp = (tmp - minutes) * 60;
+//      int seconds = tmp.toInt();
+//      DateTime dt = _dtBase.add(Duration(days: days - 1));
       DateTime dt =
-          _dtBase.add(Duration(seconds: (value * 24 * 60 * 60).toInt()));
+          _dtBase2.add(Duration(seconds: (value * 24 * 60 * 60).toInt()));
       return dt;
     } catch (err) {
       return null;
@@ -390,12 +425,72 @@ DateTime parseExcelDateTime(dynamic value) {
   }
 }
 
+int parseInt(dynamic v) {
+  if (null != v) {
+    switch (v.runtimeType) {
+      case String:
+        {
+          try {
+            int i = int.parse(v);
+            return i;
+          } catch (err) {}
+          break;
+        }
+      case double:
+        {
+          return v.toInt();
+        }
+      case int:
+        {
+          return v;
+          break;
+        }
+      default:
+        {
+          assert(false);
+          break;
+        }
+    }
+  }
+  return null;
+}
+
+double parseDouble(dynamic v) {
+  if (null != v) {
+    switch (v.runtimeType) {
+      case String:
+        {
+          try {
+            double d = double.parse(v);
+            return d;
+          } catch (err) {}
+          break;
+        }
+      case double:
+        {
+          return v;
+        }
+      case int:
+        {
+          return (v as int).toDouble();
+        }
+      default:
+        {
+          assert(false);
+          break;
+        }
+    }
+  }
+  return null;
+}
+
 Future<void> saveAsPicture(GlobalKey key, String fullPath) async {
   final file = File(fullPath);
   final data = await getImageData(key);
-//    if (file.existsSync()) {
-//      await file.delete();
-//    }
+  final exist = await file.exists();
+  if (!exist) {
+    await file.create(recursive: true);
+  }
   await file.writeAsBytes(data, flush: true);
   return;
 }
@@ -410,4 +505,69 @@ Future<List<int>> getImageData(GlobalKey key) async {
   final ByteData byteData =
       await uiImage.toByteData(format: ui.ImageByteFormat.png);
   return byteData.buffer.asUint8List();
+}
+
+showMsg(BuildContext context, String msg) {
+  Scaffold.of(context).showSnackBar(SnackBar(
+    content: Text(
+      msg,
+      style: TextStyle(color: Colors.red, fontSize: 30),
+    ),
+    duration: Duration(seconds: 5),
+    backgroundColor: Colors.tealAccent,
+//    action: SnackBarAction(
+//      label: "button",
+//      onPressed: () {
+//        print("in press");
+//      },
+//    ),
+  ));
+}
+
+String valueToString(dynamic v) {
+  if (null == v) {
+    return " ";
+  }
+
+  switch (v.runtimeType) {
+    case String:
+      {
+        if ("" == v) {
+          return " ";
+        }
+        return v;
+      }
+    case double:
+      {
+        return (v as double).toStringAsFixed(2);
+      }
+    case int:
+      {
+        return "$v";
+      }
+    case DateInt:
+      {
+        return formatDateInt(v);
+      }
+    default:
+      {
+        assert(false);
+        break;
+      }
+  }
+}
+
+String formatDateInt(DateInt v) {
+  return "${v.year}/${v.month}/${v.day}";
+}
+
+String get defaultDataFileDir => "/storage/emulated/0/供灯报表数据";
+String get defaultExportFileDir => "/storage/emulated/0/供灯报表数据/导出文件";
+
+final _reBlank = RegExp(r'[\r\n\t]');
+final _reMultiSpace = RegExp(r' {2,}');
+String trimBlankToSingleSpace(String text) {
+  final text2 = text.replaceAll(_reBlank, " ");
+  final text3 = text2.replaceAll(_reMultiSpace, " ");
+  return text3.trim();
 }
