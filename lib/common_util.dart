@@ -309,9 +309,9 @@ class DateInt {
   }
 }
 
+final double _width = MediaQueryData.fromWindow(window).size.width;
+final double _height = MediaQueryData.fromWindow(window).size.height;
 Widget buildLoadingView({double topPadding, double height, double width}) {
-  final double _width = MediaQueryData.fromWindow(window).size.width;
-  final double _height = MediaQueryData.fromWindow(window).size.height;
   return Container(
 //      color: Colors.orange,
       alignment: Alignment.topCenter,
@@ -354,6 +354,7 @@ showLoading(BuildContext context) {
   // 需要停止显示的时候，要调用Navigator.of(context).pop();
   showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return buildLoadingCard();
       });

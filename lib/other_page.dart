@@ -95,6 +95,9 @@ class _OtherPageState extends State<OtherPage> {
           // 未选择文件
           return;
         }
+
+        showLoading(context); // 显示等待画面
+
         List<int> bytes = file.readAsBytesSync();
 
         SpreadsheetDecoder decoder;
@@ -102,27 +105,31 @@ class _OtherPageState extends State<OtherPage> {
           decoder = SpreadsheetDecoder.decodeBytes(bytes, update: true);
         } catch (err) {
           showMsg(context, "请选择合法的xlsx文件");
+          Navigator.of(context).pop(); // 取消等待画面
           return;
         }
 
-        Navigator.of(context).push(MaterialPageRoute(builder: (context2) {
+        await Navigator.of(context).push(MaterialPageRoute(builder: (context2) {
           return ExcelPreviewSelectPage(
             title,
             decoder,
             onCommitFn: (String selectedTableName) async {
-              bool ok =
+              String errMsg =
                   await _excelMgr.ImportDetailData(decoder, selectedTableName);
 
-              String msg;
-              if (ok) {
-                msg = "导入成功！";
+              if ((null == errMsg) || ("" == errMsg)) {
+                showMsg(context, "导入成功！");
               } else {
-                msg = "导入失败！";
+                // 导入失败时，在预览界面显示错误信息，这里不做处理
+//                msg = "导入失败！";
               }
-              showMsg(context, msg);
+
+              return errMsg;
             },
           );
         }));
+
+        Navigator.of(context).pop(); // 取消等待画面
       },
     );
   }
@@ -137,6 +144,7 @@ class _OtherPageState extends State<OtherPage> {
               style:
                   TextStyle(fontSize: _fontSize * 1.5, color: Colors.orange)),
         ]));
+
     return RaisedButton(
       child: FittedBox(child: title),
       onPressed: () async {
@@ -146,6 +154,9 @@ class _OtherPageState extends State<OtherPage> {
           // 未选择文件
           return;
         }
+
+        showLoading(context); // 显示等待画面
+
         List<int> bytes = file.readAsBytesSync();
 
         SpreadsheetDecoder decoder;
@@ -153,27 +164,31 @@ class _OtherPageState extends State<OtherPage> {
           decoder = SpreadsheetDecoder.decodeBytes(bytes, update: true);
         } catch (err) {
           showMsg(context, "请选择合法的xlsx文件");
+          Navigator.of(context).pop(); // 取消等待画面
           return;
         }
 
-        Navigator.of(context).push(MaterialPageRoute(builder: (context2) {
+        await Navigator.of(context).push(MaterialPageRoute(builder: (context2) {
           return ExcelPreviewSelectPage(
             title,
             decoder,
             onCommitFn: (String selectedTableName) async {
-              bool ok = await _excelMgr.ImportExpenditureData(
+              String errMsg = await _excelMgr.ImportExpenditureData(
                   decoder, selectedTableName);
 
-              String msg;
-              if (ok) {
-                msg = "导入成功！";
+              if ((null == errMsg) || ("" == errMsg)) {
+                showMsg(context, "导入成功！");
               } else {
-                msg = "导入失败！";
+                // 导入失败时，在预览界面显示错误信息，这里不做处理
+//                msg = "导入失败！";
               }
-              showMsg(context, msg);
+
+              return errMsg;
             },
           );
         }));
+
+        Navigator.of(context).pop(); // 取消等待画面
       },
     );
   }

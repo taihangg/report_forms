@@ -29,8 +29,7 @@ class _AddExpenditureDataPageState extends State<AddExpenditureDataPage> {
   double _boxWidth;
   double _boxHight;
 
-  ExcelMgr _excelMgr =
-      ExcelMgr(onFinishedFn: (ExcelMgr mgr, bool ok, String msg) {});
+  ExcelMgr _excelMgr = ExcelMgr();
 
   DateTime _pickDate;
   DateFormat _fmt = DateFormat("yyyy/M/d");
@@ -385,17 +384,14 @@ class _AddExpenditureDataPageState extends State<AddExpenditureDataPage> {
 
             await Future.delayed(Duration(milliseconds: 200)); // 等待loading画面显示
 
-            bool ok = await _excelMgr.AddExpenditureDataTable(expenditure);
+            String errMsg = await _excelMgr.AddExpenditureData(expenditure);
             Navigator.of(context).pop(); // 取消等待画面
 
-            String msg;
-            if (ok) {
-              msg = "添加成功！";
+            if ((null == errMsg) || ("" == errMsg)) {
+              errMsg = "添加成功！";
               _clear();
-            } else {
-              msg = "添加失败！";
             }
-            showMsg(context, msg);
+            showMsg(context, errMsg);
           },
         ),
       ],

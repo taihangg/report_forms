@@ -19,8 +19,10 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
 //  String _newText;
 //  UserDefinedFestirvalEditorState();
 
-  ExcelMgr _excelMgr =
-      ExcelMgr(onFinishedFn: (ExcelMgr mgr, bool ok, String msg) {});
+  ExcelMgr _excelMgr = ExcelMgr();
+
+  String _errMsg;
+  bool get hasErrMsg => ((null != _errMsg) && ("" != _errMsg));
 
   double _width = MediaQueryData.fromWindow(window).size.width;
   double _height = MediaQueryData.fromWindow(window).size.height;
@@ -53,7 +55,9 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
       body: Builder(
         builder: (BuildContext context2) {
           return Scrollbar(
-              child: SingleChildScrollView(child: _buildBody(context2)));
+              child: SingleChildScrollView(
+            child: _buildBody(context2),
+          ));
         },
       ),
     );
@@ -62,12 +66,15 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
   Widget _buildBody(BuildContext context) {
     return Column(
       children: <Widget>[
-        _buildReminder(),
-        SizedBox(height: _width * 5 / 100),
+        Column(children: <Widget>[
+          _buildReminder(),
+          SizedBox(height: 5),
+          _buildErrMsgBox(),
+        ]),
         _buildInputTextBox(),
-        SizedBox(height: _width * 5 / 100),
+        SizedBox(height: 3),
         _buildButtonRow(context),
-        SizedBox(height: _width / 40),
+        SizedBox(height: 5),
       ],
     );
   }
@@ -75,7 +82,7 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
   Widget _buildReminder() {
     return Column(
       children: <Widget>[
-        SizedBox(height: 10),
+        SizedBox(height: 1),
         Center(
             child: Text("最后一次数据",
                 style: TextStyle(fontSize: _fontSize, color: Colors.red))),
@@ -92,6 +99,27 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
         ),
       ],
     );
+  }
+
+  Widget _buildErrMsgBox() {
+    if (hasErrMsg) {
+      return Card(
+        color: Colors.grey[300],
+        child: Container(
+          width: _width * 98 / 100,
+          height: _height * 25 / 100,
+          child: Scrollbar(
+              child: SingleChildScrollView(
+            child: Text(
+              _errMsg,
+              style: TextStyle(fontSize: _width / 15, color: Colors.red),
+            ),
+          )),
+        ),
+      );
+    } else {
+      return SizedBox(width: 1, height: 1);
+    }
   }
 
   Widget _buildLastDetailItem() {
@@ -166,36 +194,37 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
   }
 
   Widget _buildInputTextBox() {
-    return Scrollbar(
-        child: SingleChildScrollView(
-            child: Container(
-      width: _width * 9 / 10,
-      height: _height * 60 / 100,
+    return Container(
+        width: _width * 98 / 100,
+        height: hasErrMsg ? (_height * 45 / 100) : (_height * 73 / 100),
 //      decoration: BoxDecoration(
 //        color: Colors.blue[300],
 //        border: Border.all(width: 0.5, color: Colors.black38),
 //        borderRadius: BorderRadius.all(Radius.circular(6.0)),
 //      ),
-      child: TextFormField(
-        controller: _controller,
+        child: Scrollbar(
+            child: SingleChildScrollView(
+          child: TextFormField(
+            controller: _controller,
 //        autofocus: true,
-        maxLines: null,
-        minLines: 25,
+            maxLines: null,
+            minLines: 22,
 //        expands: true,
 //        maxLength: 100000000000,
 //        maxLengthEnforced: false,
-        decoration: InputDecoration(
-          hintText: "请输入新增数据!",
-          hintStyle: TextStyle(fontSize: _fontSize, color: Colors.grey[500]),
-          filled: true,
-          fillColor: Colors.grey[200],
-        ),
-        style: TextStyle(fontSize: _fontSize),
-        onChanged: (String str) {
+            decoration: InputDecoration(
+              hintText: "请输入新增数据!",
+              hintStyle:
+                  TextStyle(fontSize: _fontSize, color: Colors.grey[500]),
+              filled: true,
+              fillColor: Colors.grey[200],
+            ),
+            style: TextStyle(fontSize: _fontSize),
+            onChanged: (String str) {
 //          _newText = str;
-        },
-      ),
-    )));
+            },
+          ),
+        )));
   }
 
   Widget _buildButtonRow(BuildContext context) {
@@ -209,6 +238,10 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
             // for test
             if ("" != _controller.text) {
               _controller.text = "";
+            }
+            if (null != _errMsg) {
+              _errMsg = null;
+              setState(() {});
             }
 
 //            _controller.text = "";
@@ -231,21 +264,25 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
             final msg = _parse(_controller.text, parsedLines);
             if ((null != msg) && ("" != msg)) {
               Navigator.of(context).pop(); // 取消等待画面
+              _errMsg = msg;
+              setState(() {});
               showMsg(context, msg);
               return;
             }
 
-            bool ok =
+            String errMsg =
                 await _excelMgr.AddDetailData(parsedLines.reversed.toList());
 
             Navigator.of(context).pop(); // 取消等待画面
 
             String msg2;
-            if (ok) {
+            if ((null != errMsg) && ("" != errMsg)) {
+              msg2 = "添加数据失败!";
+              _errMsg = errMsg;
+              setState(() {});
+            } else {
               _controller.text = "";
               msg2 = "添加成功!";
-            } else {
-              msg2 = "添加数据失败!";
             }
             showMsg(context, msg2);
 
@@ -260,7 +297,7 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
   }
 
   String _parse(String data, List<List<String>> parsedLines) {
-    String msg;
+    String errMsg = "";
     final lines = _controller.text.split("\n");
     String lastLine;
     int lineNum = lines.length + 1;
@@ -268,16 +305,9 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
     RegExp re = RegExp(
         r"(?<submitter>^.*)\t(?<dateTime>[0-9]{4}[^0-9][0-9]{1,2}[^0-9][0-9]{1,2}[^0-9][0-9]{1,2}[^0-9][0-9]{1,2}[^0-9][0-9]{1,2})\t");
     for (String line in lines.reversed) {
-//      int x;
-//      await x;
-
+      bool ok = true;
       lineNum--;
-//      if (0 == (lineNum % 50)) {
-//        // 给外面的等待动画运行一下
-//        int x;
-//        await x;
-////         await Future.delayed(Duration(milliseconds: 300));
-//      }
+
 //              line.split("\t");
 
       final matches = re.allMatches(line);
@@ -303,8 +333,8 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
       }
       int moneyIndex = nameMoney.lastIndexOf("\t");
       if (moneyIndex < 0) {
-        msg = "第$lineNum行，金额数据不正确：\n$line";
-        break;
+        ok = false;
+        errMsg += "第${lineNum}行，金额数据不正确：$line\n";
       }
 
       String submitter = match.namedGroup("submitter");
@@ -319,15 +349,21 @@ class AddDetailDataPageState extends State<AddDetailDataPage> {
           try {
             double.parse(money);
           } catch (err) {
-            msg = "第$lineNum行，金额数据不正确：\n$line";
-            break;
+            ok = false;
+            errMsg += "第${lineNum}行，金额数据不正确：${line}\n";
           }
         }
       }
-      List<String> parsedLine = [submitter, dateTime, name, money];
-      parsedLines.add(parsedLine);
+      if (ok) {
+        List<String> parsedLine = [submitter, dateTime, name, money];
+        parsedLines.add(parsedLine);
+      }
     }
 
-    return msg;
+    if (null != lastLine) {
+      errMsg += "解析数据出错：\n${lastLine}";
+    }
+
+    return ("" == errMsg) ? null : errMsg;
   }
 }

@@ -21,9 +21,7 @@ class ExportNameListPage extends StatefulWidget {
 
 class _ExportNameListPageState extends State<ExportNameListPage> {
   _ExportNameListPageState() {
-    _excelMgr = ExcelMgr(
-        latestDetailDataDayCount: _defaultLatestDetailDataDayCount,
-        onFinishedFn: _onExcelMgrFinished);
+    _excelMgr = ExcelMgr(onUpdatedFn: _onExcelMgrFinishedOrUpdate);
 
 //    final today = DateTime.now();
 //    final yesterday = DateTime(today.year, today.month, today.day - 1);
@@ -68,6 +66,12 @@ class _ExportNameListPageState extends State<ExportNameListPage> {
   DateInt _lastExportEndDateInt;
 
   @override
+  void dispose() {
+    _excelMgr.cancelNotify();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -103,10 +107,10 @@ class _ExportNameListPageState extends State<ExportNameListPage> {
 
   bool _initing = true;
 
-  void _onExcelMgrFinished(ExcelMgr mgr, bool ok, String msg) async {
+  void _onExcelMgrFinishedOrUpdate(ExcelMgr mgr, bool ok, String errMsg) async {
     _initing = false;
 
-    _msg = msg;
+    _msg = errMsg;
     _color = Colors.red;
 
     if (ok) {
@@ -254,27 +258,35 @@ class _ExportNameListPageState extends State<ExportNameListPage> {
         ),
       )),
       onTap: () async {
-        final today = DateTime.now();
+        final period = _excelMgr.getDetailDatePeriod();
+        assert(null != period);
 
-        final firstDateInt = _excelMgr.getFirstDetailDate();
-        DateTime firstDate = (null != firstDateInt) ? firstDateInt.dt : today;
-        DateTime lastDate = (_excelMgr.detailList.isNotEmpty)
-            ? _excelMgr.detailList.last.commitDateInt.dt
-            : today;
+        DateInt firstDateInt;
+        DateInt lastDateInt;
+        DateInt initialDateInt;
+        if (null == period) {
+          DateInt todayInt = DateInt(DateTime.now());
+          firstDateInt = todayInt;
+          lastDateInt = todayInt;
+          initialDateInt = todayInt;
+        } else {
+          firstDateInt = period[0];
+          lastDateInt = period[1];
+          initialDateInt = _selectedDetailEndDateInt;
 
-        DateTime initialDate = _selectedDetailEndDateInt.dt;
-        if (initialDate.isBefore(firstDate)) {
-          initialDate = firstDate;
-        }
-        if (initialDate.isAfter(lastDate)) {
-          initialDate = lastDate;
+          if (_detailStartDateInt.data < firstDateInt.data) {
+            initialDateInt = firstDateInt;
+          }
+          if (lastDateInt.data < _detailStartDateInt.data) {
+            initialDateInt = lastDateInt;
+          }
         }
 
         final newDate = await showDatePicker(
           context: context,
-          initialDate: initialDate,
-          firstDate: firstDate,
-          lastDate: lastDate,
+          initialDate: initialDateInt.dt,
+          firstDate: firstDateInt.dt,
+          lastDate: lastDateInt.dt,
         );
         if (null != newDate) {
           _updateDetailStartDateInt(DateInt(newDate));
@@ -303,27 +315,35 @@ class _ExportNameListPageState extends State<ExportNameListPage> {
         ),
       )),
       onTap: () async {
-        final today = DateTime.now();
+        final period = _excelMgr.getDetailDatePeriod();
+        assert(null != period);
 
-        final firstDateInt = _excelMgr.getFirstDetailDate();
-        DateTime firstDate = (null != firstDateInt) ? firstDateInt.dt : today;
-        DateTime lastDate = (_excelMgr.detailList.isNotEmpty)
-            ? _excelMgr.detailList.last.commitDateInt.dt
-            : today;
+        DateInt firstDateInt;
+        DateInt lastDateInt;
+        DateInt initialDateInt;
+        if (null == period) {
+          DateInt todayInt = DateInt(DateTime.now());
+          firstDateInt = todayInt;
+          lastDateInt = todayInt;
+          initialDateInt = todayInt;
+        } else {
+          firstDateInt = period[0];
+          lastDateInt = period[1];
+          initialDateInt = _selectedDetailEndDateInt;
 
-        DateTime initialDate = _selectedDetailEndDateInt.dt;
-        if (initialDate.isBefore(firstDate)) {
-          initialDate = firstDate;
-        }
-        if (initialDate.isAfter(lastDate)) {
-          initialDate = lastDate;
+          if (_detailStartDateInt.data < firstDateInt.data) {
+            initialDateInt = firstDateInt;
+          }
+          if (lastDateInt.data < _detailStartDateInt.data) {
+            initialDateInt = lastDateInt;
+          }
         }
 
         final newDate = await showDatePicker(
           context: context,
-          initialDate: initialDate,
-          firstDate: firstDate,
-          lastDate: lastDate,
+          initialDate: initialDateInt.dt,
+          firstDate: firstDateInt.dt,
+          lastDate: lastDateInt.dt,
         );
         if (null != newDate) {
           _updateSelectedDetailEndDateInt(DateInt(newDate));

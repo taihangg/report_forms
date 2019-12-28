@@ -22,7 +22,7 @@ import 'add_expenditure_data_page.dart';
 class ExcelPreviewSelectPage extends StatefulWidget {
   final Widget title;
   final SpreadsheetDecoder decoder;
-  final void Function(String tableName) onCommitFn;
+  final Future<String> Function(String tableName) onCommitFn;
   ExcelPreviewSelectPage(this.title, this.decoder,
       {@required this.onCommitFn}) {}
 
@@ -37,8 +37,11 @@ class _ExcelPreviewSelectPageState extends State<ExcelPreviewSelectPage> {
 
   double _width = MediaQueryData.fromWindow(window).size.width;
   double _height = MediaQueryData.fromWindow(window).size.height;
+
   String _selectedTable = "";
   Iterable<MapEntry<String, SpreadsheetTable>> _tables;
+
+  String _errMsg;
 
   @override
   void initState() {
@@ -81,7 +84,8 @@ class _ExcelPreviewSelectPageState extends State<ExcelPreviewSelectPage> {
   Widget _buildBody() {
     return Column(
       children: [
-        _buildTitle(),
+        _buildErrMsg(),
+        _buildTableNames(),
         _buildContent(),
         Divider(thickness: 2.0, color: Colors.lightBlueAccent),
         _buildButtonRow(),
@@ -90,7 +94,20 @@ class _ExcelPreviewSelectPageState extends State<ExcelPreviewSelectPage> {
     );
   }
 
-  Widget _buildTitle() {
+  Widget _buildErrMsg() {
+    if ((null != _errMsg) && ("" != _errMsg)) {
+      return Card(
+          color: Colors.grey[300],
+          child: Container(
+              width: _width * 98 / 100,
+              child: Text(_errMsg,
+                  style: TextStyle(fontSize: _width / 15, color: Colors.red))));
+    } else {
+      return SizedBox();
+    }
+  }
+
+  Widget _buildTableNames() {
     if (_tables.isEmpty) {
       return Card(
         child: Container(
@@ -100,7 +117,7 @@ class _ExcelPreviewSelectPageState extends State<ExcelPreviewSelectPage> {
             borderRadius: BorderRadius.all(Radius.circular(6.0)),
           ),
           child: Text(
-            "没有表格",
+            "没有表",
             style: TextStyle(fontSize: _width / 15, color: Colors.grey),
           ),
         ),
@@ -219,13 +236,21 @@ class _ExcelPreviewSelectPageState extends State<ExcelPreviewSelectPage> {
           onPressed: () async {
             if (null != widget.onCommitFn) {
               showLoading(context);
-              await Future.delayed(Duration(seconds: 1));
+              await Future.delayed(Duration(milliseconds: 1000));
 
-              widget.onCommitFn(_selectedTable);
+              String errMsg = await widget.onCommitFn(_selectedTable);
+              Navigator.of(context).pop(); // 退出等待界面
+              if ((null != errMsg) && ("" != errMsg)) {
+                showMsg(context, "导入失败！");
+                _errMsg = "导入【${_selectedTable}】表失败：\n" + errMsg;
+                setState(() {});
+              } else {
+                // 导入成功
+                Navigator.of(context).pop(); // 返回上一级页面
+              }
 
-              Navigator.of(context).pop();
+//              Navigator.of(context).pop();
             }
-            Navigator.of(context).pop();
           },
         ),
       ],

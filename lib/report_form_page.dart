@@ -26,17 +26,20 @@ class ReportFormPage extends StatefulWidget {
 class _ReportFormPageState extends State<ReportFormPage> {
   _ReportFormPageState() {
     int defaultLatestDetailDataDayCount = 15;
-    final today = DateTime.now();
-    final startDate = DateTime(
-        today.year, today.month, today.day - defaultLatestDetailDataDayCount);
-    _detailStartDateInt = DateInt(startDate);
-    _detailStartDateText = formatDateInt(_detailStartDateInt);
+    if (null == _detailStartDateInt) {
+      final today = DateTime.now();
+      final startDate = DateTime(
+          today.year, today.month, today.day - defaultLatestDetailDataDayCount);
+      _detailStartDateInt = DateInt(startDate);
+    }
 
 //    Future.delayed(Duration(seconds: 1), () {
-    _excelMgr = ExcelMgr(
-      latestDetailDataDayCount: defaultLatestDetailDataDayCount,
-      onFinishedFn: _onExcelMgrFinished,
-    );
+    if (null == _excelMgr) {
+      _excelMgr = ExcelMgr(
+        latestDetailDataDayCount: defaultLatestDetailDataDayCount,
+        onUpdatedFn: _onExcelMgrFinishedOrUpdate,
+      );
+    }
 //    });
 
     // 默认显示最近15天的详细数据
@@ -52,10 +55,10 @@ class _ReportFormPageState extends State<ReportFormPage> {
 
   bool _initing = true;
 
-  void _onExcelMgrFinished(ExcelMgr mgr, bool ok, String msg) async {
+  void _onExcelMgrFinishedOrUpdate(ExcelMgr mgr, bool ok, String errMsg) async {
     _initing = false;
 
-    _msg = msg;
+    _msg = errMsg;
     _color = Colors.red;
     if (ok) {
       _refreshDetailListFirstShowPos(mgr);
@@ -66,20 +69,27 @@ class _ReportFormPageState extends State<ReportFormPage> {
   }
 
   GlobalKey _summaryWidgetKey = GlobalKey();
-  List<GlobalKey> _statisticsWidgetKeyList = [];
-  List<GlobalKey> _expenditureWidgetKeyList = [];
-  List<GlobalKey> _detailWidgetKeyList = [];
+  List<GlobalKey> _statisticsWidgetKeyList;
+  List<GlobalKey> _expenditureWidgetKeyList;
+  List<GlobalKey> _detailWidgetKeyList;
 
   _initGlobalKeys() {
-    _statisticsWidgetKeyList.clear();
-    _expenditureWidgetKeyList.clear();
-    _detailWidgetKeyList.clear();
+    _statisticsWidgetKeyList = [];
+    _expenditureWidgetKeyList = [];
+    _detailWidgetKeyList = [];
   }
 
-  DateInt _detailStartDateInt;
-  String _detailStartDateText;
+  static DateInt _detailStartDateInt;
+
   int _detailPerPageLimit = 100;
   int _detailListFirstShowPos;
+
+  @override
+  void dispose() {
+    _excelMgr.cancelNotify();
+
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -215,7 +225,7 @@ class _ReportFormPageState extends State<ReportFormPage> {
     return dir;
   }
 
-  bool _first = true;
+//  bool _first = true;
   Widget _buildContent(BuildContext context) {
     _waitMilliseconds = _firstWaitMilliseconds;
 
@@ -226,35 +236,30 @@ class _ReportFormPageState extends State<ReportFormPage> {
       _buildExpenditureWidget(),
     ];
 
-    final first = _first;
-    List<Widget> children2;
-    if (_first) {
-      _first = false;
-      children2 = children1.reversed
-          .map((child) {
-            return _buildFutureBuilder(child);
-          })
-          .toList()
-          .reversed
-          .toList();
-    }
+    List<Widget> children2 = children1.reversed
+        .map((child) {
+          return _buildFutureBuilder(child);
+        })
+        .toList()
+        .reversed
+        .toList();
 
     return Expanded(
       child: Scrollbar(
         child: SingleChildScrollView(
 //          reverse : true,
           child: Wrap(
-              alignment: WrapAlignment.spaceEvenly,
-              children: first ? children2 : children1),
+            alignment: WrapAlignment.start,
+            children: children2,
+          ),
         ),
       ),
     );
   }
 
   int _waitMilliseconds;
-  final int _waitStep = 500;
-  final int _firstWaitMilliseconds = 500;
-  Widget _loading;
+  static const int _waitStep = 500;
+  final int _firstWaitMilliseconds = _waitStep;
 
   int _buildCount;
   int _loadedCount;
@@ -266,14 +271,23 @@ class _ReportFormPageState extends State<ReportFormPage> {
     _loadedCount = 0;
   }
 
+  Widget _loading;
   Widget _buildFutureBuilder(Widget child) {
     final thisWait = _waitMilliseconds;
     _waitMilliseconds += _waitStep;
     if (null == _loading) {
-      _loading = buildLoadingView(
-          topPadding: _width / 20,
-          height: _width * 33 / 100,
-          width: _width * 30 / 100);
+      final size = _width * 20 / 100;
+      _loading = Container(
+        width: size,
+        height: size,
+        child: FittedBox(
+          child: buildLoadingView(
+            topPadding: _width * 4 / 100,
+            width: size * 2,
+            height: size * 2,
+          ),
+        ),
+      );
     }
 
     return FutureBuilder(
@@ -340,13 +354,17 @@ class _ReportFormPageState extends State<ReportFormPage> {
   Widget _buildSummary() {
     return RepaintBoundary(
       key: _summaryWidgetKey,
-      child: Card(
-        elevation: 5.0,
-        color: Colors.grey[100],
-        child: Container(
-            width: _width * 95 / 100,
-            child: Text(_excelMgr.summary,
-                style: TextStyle(fontSize: _width / 20))),
+      child: Container(
+        alignment: Alignment.center,
+        width: _width,
+        child: Card(
+          elevation: 5.0,
+          color: Colors.grey[100],
+          child: Container(
+              width: _width * 97 / 100,
+              child: Text(_excelMgr.summary,
+                  style: TextStyle(fontSize: _width / 20))),
+        ),
       ),
     );
   }
@@ -601,7 +619,7 @@ class _ReportFormPageState extends State<ReportFormPage> {
 
   Widget _buildEmptyHint(String msg) {
     return Container(
-        width: _width * 90 / 100,
+        width: _width,
         height: _width * 10 / 100,
         alignment: Alignment.topCenter,
         child: FittedBox(
@@ -615,16 +633,17 @@ class _ReportFormPageState extends State<ReportFormPage> {
     }
 
     assert(null != _detailListFirstShowPos);
+
+//    if (null == _detailListFirstShowPos) {
+//      _refreshDetailListFirstShowPos(_excelMgr); // 可能开始没有数据，导入数据后再返回回来
+//    }
+
     List<Widget> children = [Divider(), _buildDetailStartDateButton()];
 
     int keyIndex = 0;
 
     int showCount = _excelMgr.detailList.length - _detailListFirstShowPos + 1;
 
-    if (_detailListFirstShowPos < 0) {
-      _detailListFirstShowPos = 0;
-      showCount = _excelMgr.detailList.length;
-    }
     int detailPageCount =
         (showCount + _detailPerPageLimit - 1) ~/ _detailPerPageLimit;
 
@@ -660,7 +679,6 @@ class _ReportFormPageState extends State<ReportFormPage> {
     final lastDateInt = mgr.detailList.last.commitDateInt;
     if (lastDateInt.data < _detailStartDateInt.data) {
       _detailStartDateInt = lastDateInt;
-      _detailStartDateText = formatDateInt(_detailStartDateInt);
     }
 
     int i;
@@ -685,7 +703,7 @@ class _ReportFormPageState extends State<ReportFormPage> {
             alignment: Alignment.center,
             child: FittedBox(
               child: Text(
-                "随喜与名单记录起始显示\n日期：" + _detailStartDateText,
+                "随喜与名单记录起始显示日期：\n" + formatDateInt(_detailStartDateInt),
                 style: TextStyle(fontSize: _width / 14),
                 textAlign: TextAlign.center,
               ),
@@ -694,31 +712,38 @@ class _ReportFormPageState extends State<ReportFormPage> {
         ),
       ),
       onTap: () async {
-        final today = DateTime.now();
+        final period = _excelMgr.getDetailDatePeriod();
+        assert(null != period);
 
-        final firstDateInt = _excelMgr.getFirstDetailDate();
-        DateTime firstDate = (null != firstDateInt) ? firstDateInt.dt : today;
-        DateTime lastDate = (_excelMgr.detailList.isNotEmpty)
-            ? _excelMgr.detailList.last.commitDateInt.dt
-            : today;
+        DateInt firstDateInt;
+        DateInt lastDateInt;
+        DateInt initialDateInt;
+        if (null == period) {
+          DateInt todayInt = DateInt(DateTime.now());
+          firstDateInt = todayInt;
+          lastDateInt = todayInt;
+          initialDateInt = todayInt;
+        } else {
+          firstDateInt = period[0];
+          lastDateInt = period[1];
+          initialDateInt = _detailStartDateInt;
 
-        DateTime initialDate = _detailStartDateInt.dt;
-        if (initialDate.isBefore(firstDate)) {
-          initialDate = firstDate;
-        }
-        if (initialDate.isAfter(lastDate)) {
-          initialDate = lastDate;
+          if (_detailStartDateInt.data < firstDateInt.data) {
+            initialDateInt = firstDateInt;
+          }
+          if (lastDateInt.data < _detailStartDateInt.data) {
+            initialDateInt = lastDateInt;
+          }
         }
 
         final newDate = await showDatePicker(
           context: context,
-          initialDate: initialDate,
-          firstDate: firstDate,
-          lastDate: lastDate,
+          initialDate: initialDateInt.dt,
+          firstDate: firstDateInt.dt,
+          lastDate: lastDateInt.dt,
         );
         if (null != newDate) {
           _detailStartDateInt = DateInt(newDate);
-          _detailStartDateText = formatDateInt(_detailStartDateInt);
           await _excelMgr.prepareDetailData(_detailStartDateInt);
           _refreshDetailListFirstShowPos(_excelMgr);
           setState(() {});
