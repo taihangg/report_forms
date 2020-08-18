@@ -144,4 +144,14 @@ class _DefaultCupertinoLocalizations extends CupertinoLocalizations {
 
   @override
   String timerPickerSecondLabel(int second) => '秒';
+
+  @override
+  // TODO: implement modalBarrierDismissLabel
+  String get modalBarrierDismissLabel => "null";
+
+  @override
+  String tabSemanticsLabel({int tabIndex, int tabCount}) {
+    // TODO: implement tabSemanticsLabel
+    return "null";
+  }
 }

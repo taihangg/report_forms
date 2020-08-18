@@ -1,23 +1,15 @@
 import 'dart:io';
 import 'dart:ui';
-import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart';
-import 'package:flutter/rendering.dart';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart' as m;
-import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:esys_flutter_share/esys_flutter_share.dart'
-    as esys_flutter_share;
+import 'package:flutter/rendering.dart';
 import 'package:share_extend/share_extend.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:spreadsheet_decoder/spreadsheet_decoder.dart';
-import 'common_util.dart';
 
+import 'common_util.dart';
 import 'excel_mgr.dart';
-import 'add_detail_data_page.dart';
-import 'add_expenditure_data_page.dart';
 import 'excel_preview_select_page.dart';
 
 class OtherPage extends StatefulWidget {
@@ -90,7 +82,7 @@ class _OtherPageState extends State<OtherPage> {
       child: FittedBox(child: title),
       onPressed: () async {
         final File file = await FilePicker.getFile(
-            type: FileType.CUSTOM, fileExtension: "xlsx");
+            type: FileType.custom, allowedExtensions: ["xlsx"]);
         if (null == file) {
           // 未选择文件
           return;
@@ -149,7 +141,7 @@ class _OtherPageState extends State<OtherPage> {
       child: FittedBox(child: title),
       onPressed: () async {
         final File file = await FilePicker.getFile(
-            type: FileType.CUSTOM, fileExtension: "xlsx");
+            type: FileType.custom, allowedExtensions: ["xlsx"]);
         if (null == file) {
           // 未选择文件
           return;
@@ -198,7 +190,7 @@ class _OtherPageState extends State<OtherPage> {
       child: FittedBox(child: Text("导入xlsx数据文件", style: _textStyle)),
       onPressed: () async {
         final File file = await FilePicker.getFile(
-            type: FileType.CUSTOM, fileExtension: "xlsx");
+            type: FileType.custom,allowedExtensions:[ "xlsx"]);
         if (null == file) {
           return;
         }

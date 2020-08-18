@@ -1,16 +1,14 @@
-import 'dart:ui';
-import 'package:flutter/material.dart';
-import 'plugins/color_loader_2.dart';
-import 'plugins/color_loader_3.dart';
 import 'dart:io';
 import 'dart:ui';
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart';
-import 'package:flutter/rendering.dart';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart' as m;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+
+import 'plugins/color_loader_2.dart';
+import 'plugins/color_loader_3.dart';
 
 String ValidateNumFn(String value) {
   if (value.isEmpty) {
@@ -362,7 +360,8 @@ showLoading(BuildContext context) {
 
 final RegExp _reDate = RegExp(
     r"(?<year>[0-9]{4})[^0-9](?<month>[0-9]{1,2})[^0-9](?<day>[0-9]{1,2})");
-final _dtBase = DateTime(1900, 1, -1);
+//final _dtBase = DateTime(1900, 1, -1);
+final _dtBase = DateTime(1900, 1, 0);
 DateInt parseExcelDate(dynamic value) {
   if (null == value) {
     return null;
@@ -381,7 +380,9 @@ DateInt parseExcelDate(dynamic value) {
     return DateInt.fromInt(year * 10000 + month * 100 + day);
   } else if (value is double) {
     try {
-      DateTime dt = _dtBase.add(Duration(days: value.toInt()));
+//      DateTime dt = _dtBase.add(Duration(days: value.toInt()));
+      DateTime dt = _dtBase.add(Duration(days: value.toInt() - 1));
+
       return DateInt(dt);
     } catch (err) {
       return null;
